@@ -18,5 +18,8 @@
     - public_network (клиентский трафик)
     - cluster_network (репликация OSD)
 
-## Установка на VPS через AWX Ansible
-  - ansible -> ceph -> readme.md
+## 📦 Установка Ceph на VPS кластер через Ansible
+> [ansible -> ceph -> readme.md](https://github.com/Sav231189/infrastructure/blob/main/ceph/readme.md)
+
+## 📦 Установка Ceph в k8s кластер
+> ./install.md
