@@ -95,8 +95,6 @@ reboot
 
 > Установить RKE2 Master/Server на ноду
 
-````bash
-
 ```bash
 # Версия RKE2 (должна совпадать на всех нодах!)
 RKE2_VERSION=v1.33.4+rke2r1
@@ -105,7 +103,7 @@ RKE2_VERSION=v1.33.4+rke2r1
 curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=server sh -
 
 echo "✅ RKE2 успешно установлен"
-````
+```
 
 > Установить RKE2 Worker/Agent на ноду
 
