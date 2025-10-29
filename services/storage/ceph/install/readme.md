@@ -2,6 +2,37 @@
 
 > **Rook-Ceph** — это оператор для развёртывания Ceph кластера в Kubernetes. Предоставляет блочные (RBD), файловые (CephFS) и объектные (RGW) хранилища.
 
+## 🏷️ Подготовка нод: Labels и Taints
+
+⚠️ **ВАЖНО:** Перед установкой Ceph необходимо настроить labels и taints на storage-нодах!
+
+### Настройка на каждой storage-ноде
+
+```bash
+# Замените NODE_NAME на имя вашей ноды (например: data-worker-1)
+
+# 1. Добавить label для идентификации storage-ноды
+kubectl label nodes NODE_NAME role=storage --overwrite
+
+# 2. Добавить taint чтобы обычные поды не запускались на storage-нодах
+kubectl taint nodes NODE_NAME workload=ceph:NoSchedule --overwrite
+
+# 3. Проверить настройки
+kubectl get node NODE_NAME --show-labels
+kubectl describe node NODE_NAME | grep -A5 Taints
+```
+
+**Ожидаемый результат:**
+
+- **Label:** `role=storage` ✅
+- **Taint:** `workload=ceph:NoSchedule` ✅
+
+**Примечания:**
+
+- Label `role=storage` используется для идентификации storage-нод
+- Taint `NoSchedule` означает: поды без соответствующей toleration **НЕ БУДУТ** запускаться на этой ноде
+- Это защищает storage-ноды от случайного размещения обычных подов
+
 ## 🔧 Подготовка дисков на VPS
 
 ### Проверка свободного места
@@ -171,6 +202,7 @@ nodes:
 ## ⚙️ Установка через Helm (Lens UI)
 
 > Создать namespace rook-ceph
+
 ```bash
 kubectl create namespace rook-ceph
 ```
@@ -246,14 +278,14 @@ csi:
       effect: "NoSchedule" # Тип эффекта
 
   # NodeAffinity - ОБЯЗАТЕЛЬНО запускать только на storage-нодах
-  # Storage-ноды помечены label "node-role.kubernetes.io/storage=true"
+  # Storage-ноды помечены label "role: storage"
   provisionerNodeAffinity: |
     requiredDuringSchedulingIgnoredDuringExecution:
       nodeSelectorTerms:
         - matchExpressions:
-            - key: node-role.kubernetes.io/storage
+            - key: role
               operator: In
-              values: ["true"]
+              values: ["storage"]
 
   # Количество реплик Provisioner для High Availability (HA)
   # 2 реплики = если одна storage-нода упадет, вторая продолжит работу
@@ -414,14 +446,14 @@ cephClusterSpec:
           effect: "NoSchedule" # Эффект (NoSchedule = обычные поды не попадут)
 
       # NodeAffinity - ОБЯЗАТЕЛЬНО только на storage-нодах
-      # Демоны Ceph запускаются только на нодах с label storage=true
+      # Демоны Ceph запускаются только на нодах с label role: storage
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
           nodeSelectorTerms:
             - matchExpressions:
-                - key: node-role.kubernetes.io/storage
+                - key: role
                   operator: In
-                  values: ["true"]
+                  values: ["storage"]
 
   # ========================================================================
   # РЕСУРСЫ для Ceph демонов - оптимизированы под 4GB RAM ноды
@@ -594,9 +626,9 @@ cephObjectStores:
             requiredDuringSchedulingIgnoredDuringExecution:
               nodeSelectorTerms:
                 - matchExpressions:
-                    - key: node-role.kubernetes.io/storage
+                    - key: role
                       operator: In
-                      values: ["true"]
+                      values: ["storage"]
 
         resources:
           requests:
