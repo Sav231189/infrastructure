@@ -170,7 +170,12 @@ nodes:
 
 ## ⚙️ Установка через Helm (Lens UI)
 
-> values-operator.yaml (для rook-ceph)
+> Создать namespace rook-ceph
+```bash
+kubectl create namespace rook-ceph
+```
+
+> values-operator.yaml (для rook-release/rook-ceph-operator)
 
 ```yaml
 # === Rook-Ceph Operator (control plane) ===
@@ -367,7 +372,7 @@ enableDiscoveryDaemon: false
 # TODO: Добавить пробы.
 ```
 
-> values-cluster.yaml (для rook-ceph-cluster)
+> values-cluster.yaml (для rook-release/rook-ceph-cluster)
 
 ```yaml
 # === rook/rook-ceph-cluster values (готово к применению) ===
