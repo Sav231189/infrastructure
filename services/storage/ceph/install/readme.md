@@ -105,10 +105,10 @@ VG_NAME="ceph-vg-1"
 # sgdisk --delete=4 /dev/sda && partprobe /dev/sda
 # Затем создайте правильно:
 sgdisk --new=${PART_NUMBER}:-0:0 --typecode=${PART_NUMBER}:8300 --change-name=${PART_NUMBER}:ceph-osd /dev/${DISK_NAME}
-partprobe /dev/sda
+partprobe /dev/${DISK_NAME}
 
 # Проверить результат
-sudo parted -s /dev/sda unit GiB print free
+sudo parted -s /dev/${DISK_NAME} unit GiB print free
 lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT
 # Должно показать: sda4 ~30G part (без FSTYPE)
 
