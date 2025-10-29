@@ -149,10 +149,14 @@ nodes:
 #### 3. Disk ID
 
 ```bash
+# Устанавливаем переменные для имени диска
+DISK_NAME="sda"
+# Устанавливаем переменные для номера раздела
+PART_NUMBER=4
+
 # Показать ID дисков
-ls -l /dev/disk/by-id/ | grep sda4
-
-
+ls -l /dev/disk/by-id/ | grep ${DISK_NAME}${PART_NUMBER}
+# Должно показать: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part4 -> /dev/sda4
 ```
 
 Теперь в конфигурации Ceph используйте путь к диску:
