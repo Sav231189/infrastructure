@@ -93,11 +93,18 @@ nodes:
 ```bash
 # На КАЖДОЙ ноде с расширенным разделом выполните:
 
+# Устанавливаем переменные для имени диска
+DISK_NAME="sda"
+# Устанавливаем переменные для номера раздела
+PART_NUMBER=4
+# Устанавливаем переменные для имени группы томов (имя УНИКАЛЬНОЕ для каждой ноды!)
+VG_NAME="ceph-vg-1"
+
 # Шаг 1: Создать раздел (если ещё не создан)
 # ВАЖНО: Если раздел уже есть, но создан неправильно - сначала удалите его:
 # sgdisk --delete=4 /dev/sda && partprobe /dev/sda
 # Затем создайте правильно:
-sgdisk --new=4:-0:0 --typecode=4:8300 --change-name=4:ceph-osd /dev/sda
+sgdisk --new=${PART_NUMBER}:-0:0 --typecode=${PART_NUMBER}:8300 --change-name=${PART_NUMBER}:ceph-osd /dev/${DISK_NAME}
 partprobe /dev/sda
 
 # Проверить результат
@@ -106,23 +113,17 @@ lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT
 # Должно показать: sda4 ~30G part (без FSTYPE)
 
 # Шаг 2: Создать Physical Volume
-pvcreate /dev/sda4
-```
+pvcreate /dev/${DISK_NAME}${PART_NUMBER}
 
-```bash
 # Шаг 3: Создать Volume Group (имя УНИКАЛЬНОЕ для каждой ноды!)
-vgcreate ceph-vg-1 /dev/sda4  # на первой ноде
-# vgcreate ceph-vg-2 /dev/sda4  # на второй ноде
-# vgcreate ceph-vg-3 /dev/sda4  # на третьей ноде
-```
+vgcreate ${VG_NAME} /dev/${DISK_NAME}${PART_NUMBER}
 
-```bash
 # Шаг 4: Создать Logical Volume на ВСЁ пространство
 lvcreate -l 100%FREE -n osd-lv ceph-vg-1
 
 # Шаг 5: Проверить доступность LVM тома
 # Проверить что LVM том создан и доступен
-lvdisplay /dev/ceph-vg-1/osd-lv
+lvdisplay /dev/${VG_NAME}/osd-lv
 # Должно показать: LV Path = /dev/ceph-vg-1/osd-lv, LV Size = ~50 GiB
 
 # Альтернативная проверка через lsblk
@@ -130,7 +131,7 @@ lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT
 # Должно показать: ceph-vg-1/osd-lv с размером ~50G и типом lvm
 
 # (Опционально) Проверка через ceph-volume (если установлен ceph-base)
-# ceph-volume inventory /dev/ceph-vg-1/osd-lv
+# ceph-volume inventory /dev/${VG_NAME}/osd-lv
 # Должно показать: LV Status = available
 ```
 
