@@ -88,7 +88,7 @@ nodes:
       - name: /dev/ceph-vg-1/osd-lv # ← LVM путь
 ```
 
-#### 1. LVM root mount (расширенный раздел)
+#### 2. LVM root mount (расширенный не размеченный раздел)
 
 ```bash
 # На КАЖДОЙ ноде с расширенным разделом выполните:
@@ -126,7 +126,7 @@ nodes:
       - name: /dev/ceph-vg-1/osd-lv # ← LVM путь
 ```
 
-#### 2. Disk ID
+#### 3. Disk ID
 
 ```bash
 # Показать ID дисков
@@ -340,9 +340,7 @@ csi:
 
 # discoveryDaemon выключен — он авто-сканит устройства. Мы добавляем их руками в кластерной части.
 enableDiscoveryDaemon: false
-
 # TODO: Добавить пробы.
-
 ```
 
 > values-cluster.yaml (для rook-ceph-cluster)
