@@ -292,7 +292,7 @@ EOFCONFIG
 ```bash
 cat >> /etc/rancher/rke2/config.yaml <<EOFCONFIG
 node-label:
-  - "role=db"
+  - "vault_injector=enabled"
 EOFCONFIG
 ```
 
