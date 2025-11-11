@@ -1,0 +1,193 @@
+# === Rook-Ceph Operator (control plane) ===
+image:
+  repository: docker.io/rook/ceph
+  tag: v1.18.4
+  pullPolicy: IfNotPresent
+
+# CRD создаём оператором (при первом деплое оставить true)
+crds:
+  enabled: true
+
+# Ресурсы самого оператора (ему много не нужно)
+resources:
+  requests:
+    cpu: 200m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# Где оператор работает: по умолчанию — в любом узле.
+# currentNamespaceOnly=false позволяет оператору видеть CR из своего неймспейса (rook-ceph) и управлять ими.
+currentNamespaceOnly: false
+
+# Общий уровень логов оператора
+logLevel: INFO
+
+# RBAC включён
+rbacEnable: true
+
+# === CSI (Container Storage Interface) - интеграция Ceph с Kubernetes ===
+# CSI драйверы позволяют создавать PVC (Persistent Volume Claims) в K8s
+csi:
+  # rookUseCsiOperator - использовать встроенный CSI оператор (рекомендуется)
+  rookUseCsiOperator: true
+
+  # === Типы хранилищ (включить/выключить по необходимости) ===
+  #
+  # ℹ️ Здесь только 2 драйвера - это ПРАВИЛЬНО!
+  # Object Storage (S3) НЕ требует CSI драйвера, т.к. работает через HTTP API
+  # Настройка Object Storage в values-cluster.yaml (секция cephObjectStores)
+
+  # RBD (Block Storage) - ОБЯЗАТЕЛЬНО для большинства
+  # Использование: БД, stateful приложения, PVC с режимом ReadWriteOnce (RWO)
+  # Монтируется как блочное устройство в под
+  enableRbdDriver: true
+
+  # CephFS (File System) - ОПЦИОНАЛЬНО
+  # Использование: Shared storage, ReadWriteMany (RWX), несколько подов пишут одновременно
+  # Монтируется как файловая система в поды
+  # Выключить если не нужен: enableCephfsDriver: false
+  enableCephfsDriver: false
+
+  # Общий переключатель CSI (всегда должен быть "false" чтобы CSI работал)
+  disableCsiDriver: "false"
+
+  # ========================================================================
+  # PROVISIONER - управляющий компонент (создает/удаляет RBD образы)
+  # ========================================================================
+  # Это Deployment (не DaemonSet) - запускается только на storage-нодах
+
+  # Tolerations - разрешает запуск на нодах с taint "workload=ceph:NoSchedule"
+  # Storage-ноды имеют этот taint чтобы обычные приложения на них не попали
+  provisionerTolerations:
+    - key: "workload" # Ключ taint на storage-нодах
+      operator: "Equal" # Точное совпадение
+      value: "ceph" # Значение taint
+      effect: "NoSchedule" # Тип эффекта
+
+  # NodeAffinity - ОБЯЗАТЕЛЬНО запускать только на storage-нодах
+  # Storage-ноды помечены label "role: storage"
+  provisionerNodeAffinity: |
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: role
+              operator: In
+              values: ["storage"]
+
+  # Количество реплик Provisioner для High Availability (HA)
+  # 2 реплики = если одна storage-нода упадет, вторая продолжит работу
+  provisionerReplicas: 2
+
+  # (Опционально) разнести реплики по разным нодам:
+  # Начиная с новых версий Rook/CSI это задаётся через podAntiAffinity у самого чарта ограниченно.
+  # Проще: пометь storage-ноды разными зонами/labels и добавь topologySpreadConstraints на уровне кластера.
+
+  # ========================================================================
+  # NODEPLUGIN - компонент для монтирования дисков на нодах
+  # ========================================================================
+  # Это DaemonSet - запускается на КАЖДОЙ ноде где будут использоваться PVC
+  #
+  # ⚠️ ВАЖНО: NodePlugin должен быть на той ноде, где запускается под с PVC!
+  #   - Если приложение на worker-ноде → nodeplugin нужен на worker-ноде
+  #   - Если приложение на storage-ноде → nodeplugin нужен на storage-ноде
+  #   - Masters обычно исключены (на них не запускают приложения)
+
+  # Tolerations - разрешает запуск на storage-нодах (где taint workload=ceph)
+  pluginTolerations:
+    - key: "workload" # Ключ taint
+      operator: "Equal" # Точное совпадение
+      value: "ceph" # Значение taint
+      effect: "NoSchedule" # Тип эффекта
+
+  # pluginNodeAffinity НЕ задаём - nodeplugin запустится на всех нодах
+  # Masters исключаются автоматически (у них taint control-plane без toleration)
+  # Результат: nodeplugin на всех worker + storage нодах
+  #
+  # ⚠️ ВАЖНО: НЕ ограничивайте только storage-нодами!
+  # Если ограничите - приложения на worker-нодах не смогут использовать PVC
+  #
+  # Если хотите ЯВНО исключить masters (необязательно), раскомментируйте:
+  # pluginNodeAffinity: |
+  #   requiredDuringSchedulingIgnoredDuringExecution:
+  #     nodeSelectorTerms:
+  #       - matchExpressions:
+  #           - key: node-role.kubernetes.io/control-plane
+  #             operator: DoesNotExist
+
+  # HostNetwork для CSI-плагинов — полезно в простых/ограниченных сетях.
+  enableCSIHostNetwork: true
+
+  # Включаем снапшоттеры (не обязательно, но удобно)
+  enableRBDSnapshotter: true
+  enableCephfsSnapshotter: false
+
+  # Политика смены владельца/прав при монтировании тома
+  rbdFSGroupPolicy: "File"
+  cephFSFSGroupPolicy: "File"
+
+  # ========================================================================
+  # РЕСУРСЫ (Requests/Limits) - оптимизированы для нод с 4GB RAM
+  # ========================================================================
+  # Requests - резервирование (K8s не запустит если не хватает)
+  # Limits - максимум (под будет killed если превысит)
+
+  # --- RBD Provisioner (Deployment на storage-нодах) ---
+  # Создает/удаляет RBD образы по запросам PVC
+  csiRBDProvisionerResource: |
+    - name : csi-provisioner      # Основной компонент provisioning
+      resource: { requests: { memory: 128Mi, cpu: 100m }, limits: { memory: 256Mi } }
+    - name : csi-resizer          # Расширение томов (volume expansion)
+      resource: { requests: { memory: 128Mi, cpu: 100m }, limits: { memory: 256Mi } }
+    - name : csi-attacher         # Attach/Detach томов к нодам
+      resource: { requests: { memory: 128Mi, cpu: 100m }, limits: { memory: 256Mi } }
+    - name : csi-snapshotter      # Создание снапшотов
+      resource: { requests: { memory: 128Mi, cpu: 100m }, limits: { memory: 256Mi } }
+    - name : csi-rbdplugin        # RBD драйвер
+      resource: { requests: { memory: 384Mi }, limits: { memory: 768Mi } }
+    - name : liveness-prometheus  # Health checks + метрики
+      resource: { requests: { memory: 64Mi, cpu: 25m }, limits: { memory: 128Mi } }
+
+  # --- RBD NodePlugin (DaemonSet на всех worker/storage нодах) ---
+  # Монтирует RBD диски локально на ноде для подов
+  # ВАЖНО: Уменьшены requests чтобы запуститься даже на загруженных нодах
+  csiRBDPluginResource: |
+    - name : driver-registrar     # Регистрация драйвера в kubelet
+      resource: { requests: { memory: 32Mi, cpu: 25m }, limits: { memory: 64Mi } }
+    - name : csi-rbdplugin        # RBD драйвер для монтирования
+      resource: { requests: { memory: 256Mi, cpu: 100m }, limits: { memory: 512Mi } }
+    - name : liveness-prometheus  # Health checks
+      resource: { requests: { memory: 32Mi, cpu: 25m }, limits: { memory: 64Mi } }
+  # Итого на ноду: 320Mi requests (было 512Mi - оптимизировано!)
+
+  # --- CephFS Provisioner (Deployment на storage-нодах) ---
+  # Создает/удаляет CephFS volumes (только если enableCephfsDriver: true)
+  # csiCephFSProvisionerResource: |
+  #   - name : csi-provisioner      # Основной компонент provisioning
+  #     resource: { requests: { memory: 128Mi, cpu: 100m }, limits: { memory: 256Mi } }
+  #   - name : csi-resizer          # Расширение томов
+  #     resource: { requests: { memory: 128Mi, cpu: 100m }, limits: { memory: 256Mi } }
+  #   - name : csi-attacher         # Attach/Detach томов
+  #     resource: { requests: { memory: 128Mi, cpu: 100m }, limits: { memory: 256Mi } }
+  #   - name : csi-snapshotter      # Снапшоты CephFS
+  #     resource: { requests: { memory: 128Mi, cpu: 100m }, limits: { memory: 256Mi } }
+  #   - name : csi-cephfsplugin     # CephFS драйвер
+  #     resource: { requests: { memory: 384Mi, cpu: 150m }, limits: { memory: 768Mi } }
+  #   - name : liveness-prometheus  # Health checks
+  #     resource: { requests: { memory: 64Mi, cpu: 25m }, limits: { memory: 128Mi } }
+
+  # --- CephFS NodePlugin (DaemonSet на всех worker/storage нодах) ---
+  # Монтирует CephFS локально на ноде (только если enableCephfsDriver: true)
+  # csiCephFSPluginResource: |
+  #   - name : driver-registrar     # Регистрация драйвера
+  #     resource: { requests: { memory: 32Mi, cpu: 25m }, limits: { memory: 64Mi } }
+  #   - name : csi-cephfsplugin     # CephFS драйвер для монтирования
+  #     resource: { requests: { memory: 256Mi, cpu: 100m }, limits: { memory: 512Mi } }
+  #   - name : liveness-prometheus  # Health checks
+  #     resource: { requests: { memory: 32Mi, cpu: 25m }, limits: { memory: 64Mi } }
+  # Итого на ноду: 320Mi requests (было 512Mi - оптимизировано!)
+
+# discoveryDaemon выключен — он авто-сканит устройства. Мы добавляем их руками в кластерной части.
+enableDiscoveryDaemon: false
+# TODO: Добавить пробы.
+
