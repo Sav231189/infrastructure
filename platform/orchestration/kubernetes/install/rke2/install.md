@@ -101,7 +101,8 @@ cat /proc/swaps
 RKE2_VERSION=v1.33.4+rke2r1
 
 # Запросить версию RKE2 в консоле и вставить в переменную RKE2_VERSION
-read -p "Введите версию RKE2 (по умолчанию: ${RKE2_VERSION}): " RKE2_VERSION
+read -p "Введите версию RKE2 (по умолчанию: ${RKE2_VERSION}): " input
+RKE2_VERSION=${input:-$RKE2_VERSION}
 
 # Установка RKE2 на ноду с типом master
 curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=stable INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=server sh -
@@ -120,7 +121,8 @@ systemctl enable rke2-server.service
 RKE2_VERSION=v1.33.4+rke2r1
 
 # Запросить версию RKE2 в консоле и вставить в переменную RKE2_VERSION
-read -p "Введите версию RKE2 (по умолчанию: ${RKE2_VERSION}): " RKE2_VERSION
+read -p "Введите версию RKE2 (по умолчанию: ${RKE2_VERSION}): " input
+RKE2_VERSION=${input:-$RKE2_VERSION}
 
 # Установка RKE2 на ноду с типом worker
 curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=stable INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=agent sh -
@@ -142,13 +144,15 @@ systemctl enable rke2-server.service
 TOKEN=Bootstrap-Token
 
 # Запросить токен в консоле и вставить в переменную TOKEN
-read -p "Введите токен для инициализации кластера (по умолчанию: ${TOKEN}): " TOKEN
+read -p "Введите токен для инициализации кластера (по умолчанию: ${TOKEN}): " input
+TOKEN=${input:-$TOKEN}
 
 # Имя ноды по умолчанию
 NODE_NAME=$(hostname)
 
 # Запросить имя ноды в консоле и вставить в переменную NODE_NAME
-read -p "Введите имя ноды (по умолчанию: ${NODE_NAME}): " NODE_NAME
+read -p "Введите имя ноды (по умолчанию: ${NODE_NAME}): " input
+NODE_NAME=${input:-$NODE_NAME}
 
 # Создание директории конфига, если не существует
 mkdir -p /etc/rancher/rke2/
@@ -234,14 +238,16 @@ helm version --short
 TOKEN=Bootstrap-Token
 
 # Запросить токен в консоле и вставить в переменную TOKEN
-read -p "Введите токен для добавления в кластер (по умолчанию: ${TOKEN}): " TOKEN
+read -p "Введите токен для добавления в кластер (по умолчанию: ${TOKEN}): " input
+TOKEN=${input:-$TOKEN}
 
 # Запросить IP мастера для добавления в кластер
 read -p "Введите IP мастера: " MASTER_IP
 
 # Имя ноды по умолчанию
 NODE_NAME=$(hostname)
-read -p "Введите имя ноды (по умолчанию: ${NODE_NAME}): " NODE_NAME
+read -p "Введите имя ноды (по умолчанию: ${NODE_NAME}): " input
+NODE_NAME=${input:-$NODE_NAME}
 
 # Создание директории конфига, если не существует
 mkdir -p /etc/rancher/rke2/
