@@ -171,11 +171,11 @@ cat /etc/rancher/rke2/config.yaml
 ```bash
 echo "🚀 Запуск сервиса rke2-server... ожидание запуска (может занять 2-5 минут)..."
 
-# Запуск и включение автостарта (--now уже запускает сервис)
+# Запуск и включение автостарта
 systemctl start rke2-server.service
 
 # Проверить логи сервиса
-journalctl -u rke2-server -f
+# journalctl -u rke2-server -f
 ```
 
 > Установка символической ссылки kubectl -> cli rancher на мастер ноде
@@ -202,10 +202,10 @@ kubectl get pods -A
 kubectl get jobs -A
 ```
 
-> Проверка ресурсов нод через metrics-server
+> Проверка ресурсов нод через metrics-server (watch - непрерывное отображение)
 
 ```bash
-watch kubectl top nodes
+kubectl top nodes
 ```
 
 > Получение kubeconfig для external подключения
@@ -251,9 +251,6 @@ cat > /etc/rancher/rke2/config.yaml <<EOFCONFIG
 server: https://${MASTER_IP}:9345
 token: ${TOKEN}
 node-name: "${NODE_NAME}"
-write-kubeconfig-mode: "0600"
-node-taint:
-  - "node-role.kubernetes.io/control-plane:NoSchedule"
 EOFCONFIG
 
 # Проверить конфиг
