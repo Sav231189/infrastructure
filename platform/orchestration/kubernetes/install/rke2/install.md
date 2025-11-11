@@ -307,7 +307,7 @@ echo "🔍 Проверка статуса сервиса rke2-server..."
 systemctl status rke2-server
 
 # Проверка готовности
-journalctl -u rke2-server -f
+# journalctl -u rke2-server -f
 ```
 
 > Запуск Worker/Agent с конфигом на ноде с установленным RKE2 Worker/Agent
@@ -325,7 +325,7 @@ echo "🔍 Проверка статуса сервиса rke2-agent..."
 systemctl status rke2-agent
 
 # Проверка готовности
-journalctl -u rke2-agent -f
+# journalctl -u rke2-agent -f
 ```
 
 ## Очистка кластера после установки
