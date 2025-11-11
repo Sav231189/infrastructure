@@ -100,7 +100,7 @@ reboot
 RKE2_VERSION=v1.33.4+rke2r1
 
 # Установка RKE2 на ноду с типом master
-curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=server sh -
+curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=stable INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=server sh -
 
 # Проверить статус сервиса, чтобы убедиться что установка прошла успешно, перед запуском с конфигом
 systemctl status rke2-server
@@ -113,7 +113,7 @@ systemctl status rke2-server
 RKE2_VERSION=v1.33.4+rke2r1
 
 # Установка RKE2 на ноду с типом worker
-curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=agent sh -
+curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=stable INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=agent sh -
 
 # Проверить статус сервиса, чтобы убедиться что установка прошла успешно, перед запуском с конфигом
 systemctl status rke2-agent
