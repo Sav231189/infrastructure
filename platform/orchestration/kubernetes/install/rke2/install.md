@@ -74,21 +74,22 @@ apt autoremove -y
 
 # Отключить все swap
 swapoff -a
-## Удалить все swap файлы
-sudo rm -f /swap.img /swapfile* /swap.img.* /swapfile.* /var/swap /swap
 ## Найти и удалить все swap файлы
+sudo rm -f /swap.img /swapfile* /swap.img.* /swapfile.* /var/swap /swap
 sudo find / -name "*swap*" -type f 2>/dev/null | grep -E "\.(img|file)$" | xargs sudo rm -f
+
 ## Очистить fstab
 sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
 sudo sed -i '/swapfile/ s/^\(.*\)$/#\1/g' /etc/fstab
 sudo sed -i '/swap.img/ s/^\(.*\)$/#\1/g' /etc/fstab
+
 ## Проверить результат
 echo "Проверяем результат..."
 swapon --show
 cat /proc/swaps
 
 # ВАЖНО: Перезагрузите после обновлений!
-reboot
+# reboot
 ```
 
 ## Установка RKE2
@@ -96,27 +97,39 @@ reboot
 > Установить RKE2 Master/Server на ноду
 
 ```bash
-# Версия RKE2 (должна совпадать на всех нодах!)
+# Версия RKE2 по умолчанию (должна совпадать на всех нодах!)
 RKE2_VERSION=v1.33.4+rke2r1
+
+# Запросить версию RKE2 в консоле и вставить в переменную RKE2_VERSION
+read -p "Введите версию RKE2 (по умолчанию: ${RKE2_VERSION}): " RKE2_VERSION
 
 # Установка RKE2 на ноду с типом master
 curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=stable INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=server sh -
 
 # Проверить статус сервиса, чтобы убедиться что установка прошла успешно, перед запуском с конфигом
 systemctl status rke2-server
+
+# start and enable for restarts - start on boot
+systemctl enable rke2-server.service
 ```
 
 > Установить RKE2 Worker/Agent на ноду
 
 ```bash
-# Версия RKE2 (должна совпадать на всех нодах!)
+# Версия RKE2 по умолчанию (должна совпадать на всех нодах!)
 RKE2_VERSION=v1.33.4+rke2r1
+
+# Запросить версию RKE2 в консоле и вставить в переменную RKE2_VERSION
+read -p "Введите версию RKE2 (по умолчанию: ${RKE2_VERSION}): " RKE2_VERSION
 
 # Установка RKE2 на ноду с типом worker
 curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=stable INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=agent sh -
 
 # Проверить статус сервиса, чтобы убедиться что установка прошла успешно, перед запуском с конфигом
 systemctl status rke2-agent
+
+# start and enable for restarts - start on boot
+systemctl enable rke2-server.service
 ```
 
 ## Инициализация Kubernetes (RKE2)
@@ -131,8 +144,8 @@ TOKEN=Bootstrap-Token
 # Запросить токен в консоле и вставить в переменную TOKEN
 read -p "Введите токен для инициализации кластера (по умолчанию: ${TOKEN}): " TOKEN
 
-# Генерация имени ноды по умолчанию
-NODE_NAME=$(hostname)-master-$(head /dev/urandom | tr -dc a-z0-9 | head -c 8)
+# Имя ноды по умолчанию
+NODE_NAME=$(hostname)
 
 # Запросить имя ноды в консоле и вставить в переменную NODE_NAME
 read -p "Введите имя ноды (по умолчанию: ${NODE_NAME}): " NODE_NAME
@@ -159,24 +172,24 @@ cat /etc/rancher/rke2/config.yaml
 echo "🚀 Запуск сервиса rke2-server... ожидание запуска (может занять 2-5 минут)..."
 
 # Запуск и включение автостарта (--now уже запускает сервис)
-systemctl enable --now rke2-server.service
+systemctl start rke2-server.service
 
-echo "🔍 Проверка статуса сервиса rke2-server..."
-
-# Проверка статуса
-systemctl status rke2-server
+# Проверить логи сервиса
+journalctl -u rke2-server -f
 ```
 
 > Установка символической ссылки kubectl -> cli rancher на мастер ноде
 
 ```bash
-# Создать символическую ссылку kubectl на cli rancher, который устанавливается из RKE2.
-ln -s /var/lib/rancher/rke2/bin/kubectl /usr/local/bin/kubectl
+# symlink all the things - kubectl
+ln -s $(find /var/lib/rancher/rke2/data/ -name kubectl) /usr/local/bin/kubectl
 
-# add kubectl conf with persistence
-echo "export KUBECONFIG=/etc/rancher/rke2/rke2.yaml" >> ~/.bashrc
-echo "export PATH=\$PATH:/usr/local/bin/:/var/lib/rancher/rke2/bin/" >> ~/.bashrc
+# add kubectl conf with persistence, as per Duane
+echo "export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=$PATH:/usr/local/bin/:/var/lib/rancher/rke2/bin/" >> ~/.bashrc
 source ~/.bashrc
+
+# check node status
+kubectl get nodes
 ```
 
 > Проверка кластера на мастер ноде
@@ -189,7 +202,7 @@ kubectl get pods -A
 kubectl get jobs -A
 ```
 
-> Проверка ресурсов нод
+> Проверка ресурсов нод через metrics-server
 
 ```bash
 watch kubectl top nodes
@@ -202,7 +215,7 @@ watch kubectl top nodes
 cat /etc/rancher/rke2/rke2.yaml
 ```
 
-> Установка HELM (пакетный менеджер). Должен установиться по дефолту через RKE2.
+> Установка HELM (пакетный менеджер). RKE2 устанавливается по дефолту с HELM.
 
 ```bash
 curl -#L https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -214,7 +227,7 @@ helm version --short
 
 ## Расширение кластера
 
-> Создать конфиг для расширения Master в кластера на ноде с установленным RKE2 Master/Server
+> Создать конфиг для расширения кластера (на ноде с установленным RKE2 Master/Server или Worker/Agent)
 
 ```bash
 # Token для инициализации кластера
@@ -226,8 +239,8 @@ read -p "Введите токен для добавления в кластер
 # Запросить IP мастера для добавления в кластер
 read -p "Введите IP мастера: " MASTER_IP
 
-# Генерация имени ноды по умолчанию
-NODE_NAME=$(hostname)-master-$(head /dev/urandom | tr -dc a-z0-9 | head -c 8)
+# Имя ноды по умолчанию
+NODE_NAME=$(hostname)
 read -p "Введите имя ноды (по умолчанию: ${NODE_NAME}): " NODE_NAME
 
 # Создание директории конфига, если не существует
@@ -247,37 +260,17 @@ EOFCONFIG
 cat /etc/rancher/rke2/config.yaml
 ```
 
-> Создать конфиг для расширения Worker кластера на ноде с установленным RKE2 Worker/Agent
+> Добавить taint для control-plane ноды в конфиг
 
 ```bash
-# Token для инициализации кластера
-TOKEN=Bootstrap-Token
-
-# Запросить токен в консоле и вставить в переменную TOKEN
-read -p "Введите токен для добавления в кластер (по умолчанию: ${TOKEN}): " TOKEN
-
-# Запросить IP мастера для добавления в кластер
-read -p "Введите IP мастера: " MASTER_IP
-
-# Генерация имени ноды по умолчанию
-NODE_NAME=$(hostname)-worker-$(head /dev/urandom | tr -dc a-z0-9 | head -c 8)
-read -p "Введите имя ноды для добавления в кластер (по умолчанию: ${NODE_NAME}): " NODE_NAME
-
-# Создание директории конфига, если не существует
-mkdir -p /etc/rancher/rke2/
-
-# Создание конфига
-cat > /etc/rancher/rke2/config.yaml <<EOFCONFIG
-server: https://${MASTER_IP}:9345
-token: ${TOKEN}
-node-name: "${NODE_NAME}"
+cat >> /etc/rancher/rke2/config.yaml <<EOFCONFIG
+write-kubeconfig-mode: "0600"
+node-taint:
+  - "node-role.kubernetes.io/control-plane:NoSchedule"
 EOFCONFIG
-
-# Проверить конфиг
-cat /etc/rancher/rke2/config.yaml
 ```
 
-> Добавить taint в конфиг (опционально example: workload=longhorn:NoSchedule)
+> Добавить дополнительные taints в конфиг (опционально example: workload=longhorn:NoSchedule)
 
 ```bash
 cat >> /etc/rancher/rke2/config.yaml <<EOFCONFIG
@@ -311,7 +304,7 @@ echo "🔍 Проверка статуса сервиса rke2-server..."
 systemctl status rke2-server
 
 # Проверка готовности
-# journalctl -u rke2-server -f
+journalctl -u rke2-server -f
 ```
 
 > Запуск Worker/Agent с конфигом на ноде с установленным RKE2 Worker/Agent
@@ -319,8 +312,8 @@ systemctl status rke2-server
 ```bash
 echo "🚀 Запуск сервиса rke2-agent... ожидание запуска (может занять 2-5 минут)..."
 
-# Запуск и включение автостарта (--now уже запускает сервис)
-systemctl enable --now rke2-agent.service
+# Запуск (--now уже запускает сервис)
+systemctl start rke2-agent.service
 
 # Ожидание запуска
 echo "🔍 Проверка статуса сервиса rke2-agent..."
@@ -329,7 +322,7 @@ echo "🔍 Проверка статуса сервиса rke2-agent..."
 systemctl status rke2-agent
 
 # Проверка готовности
-# journalctl -u rke2-agent -f
+journalctl -u rke2-agent -f
 ```
 
 ## Очистка кластера после установки
