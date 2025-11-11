@@ -97,7 +97,7 @@ cat /proc/swaps
 > Установить RKE2 Master/Server на ноду
 
 ```bash
-# Версия RKE2 по умолчанию (должна совпадать на всех нодах!)
+# Версия RKE2 по умолчанию (должна совпадать на всех нодах! 17.09.2025: v1.34.1+rke2r1)
 RKE2_VERSION=v1.33.4+rke2r1
 
 # Запросить версию RKE2 в консоле и вставить в переменную RKE2_VERSION
@@ -105,7 +105,7 @@ read -p "Введите версию RKE2 (по умолчанию: ${RKE2_VERSI
 RKE2_VERSION=${input:-$RKE2_VERSION}
 
 # Установка RKE2 на ноду с типом master
-curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=stable INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=server sh -
+curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=server sh -
 
 # Проверить статус сервиса, чтобы убедиться что установка прошла успешно, перед запуском с конфигом
 systemctl status rke2-server
@@ -117,7 +117,7 @@ systemctl enable rke2-server.service
 > Установить RKE2 Worker/Agent на ноду
 
 ```bash
-# Версия RKE2 по умолчанию (должна совпадать на всех нодах!)
+# Версия RKE2 по умолчанию (должна совпадать на всех нодах! 17.09.2025: v1.34.1+rke2r1)
 RKE2_VERSION=v1.33.4+rke2r1
 
 # Запросить версию RKE2 в консоле и вставить в переменную RKE2_VERSION
@@ -125,7 +125,7 @@ read -p "Введите версию RKE2 (по умолчанию: ${RKE2_VERSI
 RKE2_VERSION=${input:-$RKE2_VERSION}
 
 # Установка RKE2 на ноду с типом worker
-curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=stable INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=agent sh -
+curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION=${RKE2_VERSION} INSTALL_RKE2_TYPE=agent sh -
 
 # Проверить статус сервиса, чтобы убедиться что установка прошла успешно, перед запуском с конфигом
 systemctl status rke2-agent
