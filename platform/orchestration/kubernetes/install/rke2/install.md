@@ -92,6 +92,36 @@ cat /proc/swaps
 # reboot
 ```
 
+## Настройка Reverse Path Filtering (RPF) для overlay-сетей
+
+**Проблема**: Kubernetes использует overlay-сети (flannel/canal), где пакеты входят через физический интерфейс (ens18), а выходят через виртуальный (flannel.1). Strict RPF считает такую асимметрию маршрутизации спуфингом и дропает пакеты.
+
+**Симптомы**: `kubectl top` не работает, HTTP-запросы к ClusterIP зависают, но Endpoints доступны.
+
+**Решение**: Отключаем Strict RPF на всех интерфейсах (устанавливаем `rp_filter=0`), разрешая асимметричный трафик для overlay-сетей.
+
+```bash
+# Создаем persistent конфигурацию для отключения RPF
+cat > /etc/sysctl.d/99-k8s-overlay.conf <<EOF
+net.ipv4.conf.all.rp_filter=0
+net.ipv4.conf.default.rp_filter=0
+EOF
+
+# Применяем настройки для существующих flannel интерфейсов
+for i in $(ls /proc/sys/net/ipv4/conf | grep -E '^flannel(\.|$)'); do
+  echo 0 | tee /proc/sys/net/ipv4/conf/$i/rp_filter >/dev/null || true
+done
+
+# Применяем все sysctl настройки
+sysctl --system
+
+# Проверяем, что RPF отключен на всех интерфейсах (должно быть 0)
+echo "Проверка rp_filter на всех интерфейсах:"
+for i in all default $(ls /proc/sys/net/ipv4/conf); do
+  [ -f /proc/sys/net/ipv4/conf/$i/rp_filter ] && echo "$i=$(cat /proc/sys/net/ipv4/conf/$i/rp_filter)"
+done
+```
+
 ## Установка RKE2
 
 > Установить RKE2 Master/Server на ноду
