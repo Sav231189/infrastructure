@@ -157,21 +157,11 @@ NODE_NAME=${input:-$NODE_NAME}
 # Создание директории конфига, если не существует
 mkdir -p /etc/rancher/rke2/
 
-# Получить IP адрес ноды
-NODE_IP=$(hostname -I | awk '{print $1}')
-
-# Запросить IP адрес ноды в консоле и вставить в переменную NODE_IP
-read -p "Введите IP адрес ноды (по умолчанию: ${NODE_IP}): " input
-NODE_IP=${input:-$NODE_IP}
-
-# Добавление конфига с уникальным именем, taint для мастера и TLS SAN для metrics-server
+# Добавление конфига с уникальным именем и taint для мастера
 cat > /etc/rancher/rke2/config.yaml <<EOFCONFIG
 node-name: "${NODE_NAME}"
 token: ${TOKEN}
 write-kubeconfig-mode: "0600"
-tls-san:
-  - "${NODE_NAME}"
-  - "${NODE_IP}"
 node-taint:
   - "node-role.kubernetes.io/control-plane:NoSchedule"
 EOFCONFIG
@@ -259,24 +249,14 @@ NODE_NAME=$(hostname)
 read -p "Введите имя ноды (по умолчанию: ${NODE_NAME}): " input
 NODE_NAME=${input:-$NODE_NAME}
 
-# Получить IP адрес ноды
-NODE_IP=$(hostname -I | awk '{print $1}')
-
-# Запросить IP адрес ноды в консоле и вставить в переменную NODE_IP
-read -p "Введите IP адрес ноды (по умолчанию: ${NODE_IP}): " input
-NODE_IP=${input:-$NODE_IP}
-
 # Создание директории конфига, если не существует
 mkdir -p /etc/rancher/rke2/
 
-# Создание конфига с TLS SAN для metrics-server
+# Создание конфига
 cat > /etc/rancher/rke2/config.yaml <<EOFCONFIG
 server: https://${MASTER_IP}:9345
 token: ${TOKEN}
 node-name: "${NODE_NAME}"
-tls-san:
-  - "${NODE_NAME}"
-  - "${NODE_IP}"
 EOFCONFIG
 
 # Проверить конфиг
