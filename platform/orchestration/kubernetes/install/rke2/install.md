@@ -303,12 +303,12 @@ node-taint:
 EOFCONFIG
 ```
 
-> Добавить дополнительные taints в конфиг (опционально example: workload=longhorn:NoSchedule)
+> Добавить дополнительные taints в конфиг (опционально example: workload=storage:NoSchedule)
 
 ```bash
 cat >> /etc/rancher/rke2/config.yaml <<EOFCONFIG
 node-taint:
-  - "workload=ceph:NoSchedule"
+  - "workload=storage:NoSchedule"
 EOFCONFIG
 ```
 
