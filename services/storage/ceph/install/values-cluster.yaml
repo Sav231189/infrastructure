@@ -1,18 +1,19 @@
-# === rook/rook-ceph-cluster values  ===
+# === rook/rook-ceph-cluster values (готово к применению) ===
 operatorNamespace: rook-ceph
 
 cephClusterSpec:
   dataDirHostPath: /var/lib/rook
 
   cephVersion:
-    image: quay.io/ceph/ceph:v18.2.2 # Reef (рабочий тег)
+    # image: quay.io/ceph/ceph:v18.2.2 # Reef (рабочий тег)
+    image: quay.io/ceph/ceph:v19.2.3
 
   dashboard:
     enabled: true
     ssl: true
 
   mon:
-    count: 2
+    count: 3
     allowMultiplePerNode: false
 
   mgr:
@@ -33,18 +34,18 @@ cephClusterSpec:
       tolerations:
         - key: "workload" # Ключ taint на storage-нодах
           operator: "Equal"
-          value: "ceph" # Значение taint
+          value: "storage" # Значение taint
           effect: "NoSchedule" # Эффект (NoSchedule = обычные поды не попадут)
 
       # NodeAffinity - ОБЯЗАТЕЛЬНО только на storage-нодах
-      # Демоны Ceph запускаются только на нодах с label role: storage
+      # Демоны Ceph запускаются только на нодах с label role=ceph
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
           nodeSelectorTerms:
             - matchExpressions:
                 - key: role
                   operator: In
-                  values: ["storage"]
+                  values: ["ceph"]
 
   # ========================================================================
   # РЕСУРСЫ для Ceph демонов - оптимизированы под 4GB RAM ноды
@@ -81,15 +82,16 @@ cephClusterSpec:
     useAllNodes: false
     useAllDevices: false
     nodes:
-      - name: data-worker-1
+      - name: storage-1 # Имя ноды должно быть уникальным
         devices:
           - name: /dev/ceph-vg-1/osd-lv # LVM поверх расширенного раздела
-      - name: data-worker-2
+      - name: storage-2 # Имя ноды должно быть уникальным
         devices:
           - name: /dev/ceph-vg-2/osd-lv # LVM поверх расширенного раздела
-      # - name: control-worker-3
-      #   devices:
-      #     - name: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1 # Отдельный диск
+      - name: storage-3 # Имя ноды должно быть уникальным
+        devices:
+          - name: /dev/ceph-vg-3/osd-lv # LVM поверх расширенного раздела
+          # - name: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1 # Отдельный диск
 
   # Можно выключить сборщик крэшей на маленьких нодах
   crashCollector:
@@ -130,11 +132,13 @@ cephBlockPools:
 # Настраивается выше в cephBlockPools (replicapool)
 
 # === CephFS (File System) - ВКЛЮЧИТЬ/ВЫКЛЮЧИТЬ ПО НЕОБХОДИМОСТИ ===
-cephFileSystems: []
 # Если НЕ нужен shared storage (RWX) - отключите:
 #   1. В values-operator.yaml: enableCephfsDriver: false
 #   2. Здесь: storageClass.enabled: false (или удалите весь блок cephFileSystems)
-#
+# Если НЕ нужен shared storage (RWX) - оставьте пустой массив:
+cephFileSystems: []
+# Экономия: -48 PG, -2 MDS пода, -80Mi памяти
+# Раскомментируйте, если нужен CephFS и в values-cluster.yaml включить enableCephfsDriver: true
 # cephFileSystems:
 #   - name: cephfs
 #     spec:
@@ -145,8 +149,22 @@ cephFileSystems: []
 #       metadataServer:
 #         activeCount: 1
 #         activeStandby: true
+#         # Placement для MDS (обязательно на ceph-нодах!)
+#         placement:
+#           tolerations:
+#             - key: "workload"
+#               operator: "Equal"
+#               value: "storage"
+#               effect: "NoSchedule"
+#           nodeAffinity:
+#             requiredDuringSchedulingIgnoredDuringExecution:
+#               nodeSelectorTerms:
+#                 - matchExpressions:
+#                     - key: role
+#                       operator: In
+#                       values: ["ceph"]
 #     storageClass:
-#       enabled: false # включи true, когда RWX потребуется
+#       enabled: true # включи true, когда RWX потребуется
 #       name: cephfs
 #       allowVolumeExpansion: true
 #       reclaimPolicy: Delete
@@ -205,12 +223,12 @@ cephObjectStores:
         port: 80
         priorityClassName: system-cluster-critical
 
-        # Placement - запускаем RGW на storage нодах (рядом с OSD)
+        # Placement - запускаем RGW на ceph нодах (рядом с OSD)
         placement:
           tolerations:
             - key: workload
               operator: Equal
-              value: ceph
+              value: storage
               effect: NoSchedule
           nodeAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
@@ -218,7 +236,7 @@ cephObjectStores:
                 - matchExpressions:
                     - key: role
                       operator: In
-                      values: ["storage"]
+                      values: ["ceph"]
 
         resources:
           requests:

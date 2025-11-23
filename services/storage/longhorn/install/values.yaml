@@ -1,0 +1,366 @@
+global:
+  # Глобальный реестр образов (оставь пустым, если не нужен).
+  imageRegistry: ""
+  # Секреты для pull образов (если приватный реестр).
+  imagePullSecrets: []
+  # Толерации для пользовательских компонентов Longhorn (Manager/UI/Driver Deployer).
+  tolerations: []
+  # NodeSelector для пользовательских компонентов Longhorn (ограничение по нодам).
+  nodeSelector: {}
+  cattle:
+    # Системный реестр Rancher (обычно пусто).
+    systemDefaultRegistry: ""
+    windowsCluster:
+      # Поддержка Windows-кластеров Rancher (нам не нужно).
+      enabled: false
+      tolerations:
+        - key: "cattle.io/os"
+          value: "linux"
+          effect: "NoSchedule"
+          operator: "Equal"
+      nodeSelector:
+        kubernetes.io/os: "linux"
+      defaultSetting:
+        taintToleration: cattle.io/os=linux:NoSchedule
+        systemManagedComponentsNodeSelector: kubernetes.io/os:linux
+
+networkPolicies:
+  # Включить NetworkPolicy вокруг Longhorn (для RKE2 можно включить позже; по умолчанию выключено).
+  enabled: false
+  # Тип дистрибутива для политик (k3s/rke2/rke1). У нас RKE2.
+  type: "rke2"
+
+image:
+  longhorn:
+    engine:
+      registry: ""
+      repository: longhornio/longhorn-engine
+      tag: v1.10.0
+    manager:
+      registry: ""
+      repository: longhornio/longhorn-manager
+      tag: v1.10.0
+    ui:
+      registry: ""
+      repository: longhornio/longhorn-ui
+      tag: v1.10.0
+    instanceManager:
+      registry: ""
+      repository: longhornio/longhorn-instance-manager
+      tag: v1.10.0
+    shareManager:
+      registry: ""
+      repository: longhornio/longhorn-share-manager
+      tag: v1.10.0
+    backingImageManager:
+      registry: ""
+      repository: longhornio/backing-image-manager
+      tag: v1.10.0
+    supportBundleKit:
+      registry: ""
+      repository: longhornio/support-bundle-kit
+      tag: v0.0.69
+  csi:
+    # Версии CSI-сайдкаров — оставляю как у тебя (проверены).
+    attacher:
+      registry: ""
+      repository: longhornio/csi-attacher
+      tag: v4.9.0-20250826
+    provisioner:
+      registry: ""
+      repository: longhornio/csi-provisioner
+      tag: v5.3.0-20250826
+    nodeDriverRegistrar:
+      registry: ""
+      repository: longhornio/csi-node-driver-registrar
+      tag: v2.14.0-20250826
+    resizer:
+      registry: ""
+      repository: longhornio/csi-resizer
+      tag: v1.14.0-20250826
+    snapshotter:
+      registry: ""
+      repository: longhornio/csi-snapshotter
+      tag: v8.3.0-20250826
+    livenessProbe:
+      registry: ""
+      repository: longhornio/livenessprobe
+      tag: v2.16.0-20250826
+  openshift:
+    # Нам не нужно (OpenShift выключен).
+    oauthProxy:
+      registry: ""
+      repository: ""
+      tag: ""
+  # Политика pull образов.
+  pullPolicy: IfNotPresent
+
+service:
+  ui:
+    # Тип сервиса UI. Для работы через Ingress оставляем ClusterIP.
+    type: ClusterIP
+    nodePort: null
+    annotations: {}
+  manager:
+    # Сервис менеджера — ClusterIP.
+    type: ClusterIP
+    nodePort: ""
+
+persistence:
+  # Делать Longhorn StorageClass классом по умолчанию.
+  defaultClass: true
+  # ФС по умолчанию для томов.
+  defaultFsType: ext4
+  # Параметры mkfs (если нужны — можно задать).
+  defaultMkfsParams: ""
+  # Число реплик по умолчанию для SC. Для VPS практичный минимум — 2.
+  defaultClassReplicaCount: 2
+  # Локальность данных: disabled/best-effort (оставим disabled для предсказуемости).
+  defaultDataLocality: disabled
+  # Что делать с PV после удаления PVC: Delete/Retain. В проде чаще Delete, если бэкапы настроены.
+  reclaimPolicy: Delete
+  # Когда биндить том: Immediate/WaitForFirstConsumer.
+  # В проде рекомендую WaitForFirstConsumer — лучшее распределение/анти-hotspot.
+  volumeBindingMode: "WaitForFirstConsumer"
+  # Живая миграция томов (если нужна — включишь позже).
+  migratable: false
+  # Отключение revision counter (ускоряет IO, твой выбор уже — true).
+  disableRevisionCounter: "true"
+  # NFS-опции для RWX (если используешь RWX через share-manager/NFS).
+  nfsOptions: ""
+  recurringJobSelector:
+    enable: false
+    jobList: []
+  backingImage:
+    enable: false
+    # Остальные поля backing image — не нужны, т.к. отключено.
+    name: ~
+    dataSourceType: ~
+    dataSourceParameters: ~
+    expectedChecksum: ~
+  defaultDiskSelector:
+    enable: false
+    selector: ""
+  defaultNodeSelector:
+    # Мы используем все воркеры без taints, поэтому селекторы не нужны.
+    enable: false
+    selector: ""
+  # Trim-поведение для снапшотов — по умолчанию.
+  unmapMarkSnapChainRemoved: ignored
+  # Движок данных по умолчанию (v1 — стабильный).
+  dataEngine: v1
+  # Бэкап-таргет SC по умолчанию (оставим «default», бэкап стор ниже).
+  backupTargetName: default
+
+preUpgradeChecker:
+  # Предпроверка апгрейда (удобно оставить включенным).
+  jobEnabled: true
+  upgradeVersionCheck: true
+
+csi:
+  kubeletRootDir: ~
+  # В небольшом кластере достаточно 2 реплики каждого сайдкара.
+  attacherReplicaCount: 2
+  provisionerReplicaCount: 2
+  resizerReplicaCount: 2
+  snapshotterReplicaCount: 2
+
+defaultSettings:
+  # Ниже — важные дефолт-настройки менеджера Longhorn.
+  # Пустые значения (~) — взять разумные значения по умолчанию Longhorn.
+  allowRecurringJobWhileVolumeDetached: ~
+  # Создавать диск только на нодах с label create-default-disk=true (нам не нужно).
+  createDefaultDiskLabeledNodes: false
+  # Путь хранения данных на ноде (дефолт ок).
+  defaultDataPath: ~
+  defaultDataLocality: ~
+  replicaSoftAntiAffinity: ~
+  # Автобаланс реплик (least-effort: перемещает при простое; best-effort — агрессивнее).
+  replicaAutoBalance: least-effort
+  # Процент оверпровижининга. Для VPS оставим 100 (без «виртуального» раздувания).
+  storageOverProvisioningPercentage: "100"
+  # Минимум свободного места на диске для планирования (%). Практично 15.
+  storageMinimalAvailablePercentage: "15"
+  # Резерв на дефолт-диске (%). Немного оставим — 10.
+  storageReservedPercentageForDefaultDisk: "10"
+  # Чекер обновлений Longhorn (можно выключить в «закрытом» проде).
+  upgradeChecker: false
+  upgradeResponderURL: ~
+  # Реплики по умолчанию при создании через UI (оставим дефолт).
+  defaultReplicaCount: ~
+  defaultLonghornStaticStorageClass: ~
+  failedBackupTTL: ~
+  backupExecutionTimeout: ~
+  restoreVolumeRecurringJobs: ~
+  recurringSuccessfulJobsHistoryLimit: ~
+  recurringFailedJobsHistoryLimit: ~
+  recurringJobMaxRetention: ~
+  supportBundleFailedHistoryLimit: ~
+  # Толерации для системных компонентов Longhorn (не нужны).
+  taintToleration: ~
+  # NodeSelector для системных компонентов Longhorn (не нужен).
+  systemManagedComponentsNodeSelector: ~
+  # PriorityClass — чтобы Longhorn не выселяли при давлении на ноде.
+  priorityClass: "longhorn-critical"
+  autoSalvage: ~
+  autoDeletePodWhenVolumeDetachedUnexpectedly: ~
+  disableSchedulingOnCordonedNode: ~
+  replicaZoneSoftAntiAffinity: ~
+  replicaDiskSoftAntiAffinity: ~
+  nodeDownPodDeletionPolicy: ~
+  nodeDrainPolicy: ~
+  detachManuallyAttachedVolumesWhenCordoned: ~
+  replicaReplenishmentWaitInterval: ~
+  concurrentReplicaRebuildPerNodeLimit: ~
+  concurrentVolumeBackupRestorePerNodeLimit: ~
+  # Дублируем выключение revision counter (для UI-создаваемых томов).
+  disableRevisionCounter: '{"v1":"true"}'
+  systemManagedPodsImagePullPolicy: ~
+  allowVolumeCreationWithDegradedAvailability: ~
+  autoCleanupSystemGeneratedSnapshot: ~
+  autoCleanupRecurringJobBackupSnapshot: ~
+  concurrentAutomaticEngineUpgradePerNodeLimit: ~
+  backingImageCleanupWaitInterval: ~
+  backingImageRecoveryWaitInterval: ~
+  guaranteedInstanceManagerCPU: ~
+  kubernetesClusterAutoscalerEnabled: false
+  # Автоудаление «осиротевших» ресурсов (полезно для гигиены).
+  orphanResourceAutoDeletion: "replica-data;instance"
+  orphanResourceAutoDeletionGracePeriod: "3600"
+  storageNetwork: ~
+  deletingConfirmationFlag: ~
+  engineReplicaTimeout: ~
+  snapshotDataIntegrity: ~
+  snapshotDataIntegrityImmediateCheckAfterSnapshotCreation: ~
+  snapshotDataIntegrityCronjob: ~
+  removeSnapshotsDuringFilesystemTrim: ~
+  fastReplicaRebuildEnabled: ~
+  replicaFileSyncHttpClientTimeout: ~
+  longGRPCTimeOut: ~
+  logLevel: ~
+  logPath: ~
+  backupCompressionMethod: ~
+  backupConcurrentLimit: ~
+  defaultBackupBlockSize: ~
+  restoreConcurrentLimit: ~
+  v1DataEngine: ~
+  v2DataEngine: false
+  dataEngineHugepageEnabled: ~
+  dataEngineMemorySize: ~
+  dataEngineCPUMask: ~
+  replicaRebuildingBandwidthLimit: ~
+  instanceManagerPodLivenessProbeTimeout: ~
+  allowEmptyNodeSelectorVolume: ~
+  allowEmptyDiskSelectorVolume: ~
+  # Выгружаем метрики — да, но анонимную телеметрию в интернет — нет.
+  allowCollectingLonghornUsageMetrics: false
+  disableSnapshotPurge: ~
+  snapshotMaxCount: ~
+  dataEngineLogLevel: ~
+  dataEngineLogFlags: ~
+  freezeFilesystemForSnapshot: ~
+  autoCleanupSnapshotWhenDeleteBackup: ~
+  autoCleanupSnapshotAfterOnDemandBackupCompleted: ~
+  rwxVolumeFastFailover: ~
+
+# Настройка «бэкап-стора» по умолчанию (если используешь — пропиши ниже).
+defaultBackupStore:
+  backupTarget: ~
+  backupTargetCredentialSecret: ~
+  pollInterval: ~
+
+privateRegistry:
+  # Если нужен приватный реестр — заполни поля ниже.
+  createSecret: ~
+  registryUrl: ~
+  registryUser: ~
+  registryPasswd: ~
+  registrySecret: ~
+
+longhornManager:
+  log:
+    # Формат логов менеджера: plain/json.
+    format: plain
+  priorityClass: "longhorn-critical"
+  tolerations: []
+  nodeSelector: {}
+  serviceAnnotations: {}
+
+longhornDriver:
+  log:
+    format: plain
+  priorityClass: "longhorn-critical"
+  tolerations: []
+  nodeSelector: {}
+
+longhornUI:
+  # 2 реплики UI + мягкая podAntiAffinity — чтобы UI не падал от перетаскиваний.
+  replicas: 2
+  priorityClass: "longhorn-critical"
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 1
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values: [longhorn-ui]
+            topologyKey: kubernetes.io/hostname
+  tolerations: []
+  nodeSelector: {}
+
+ingress:
+  # Создаём Ingress для UI.
+  enabled: true
+  # Имя IngressClass (твой ingress-nginx в кластере).
+  ingressClassName: nginx
+  # Хост, на который смотрит NPM.
+  host: longhorn.stroy-track.ru
+  # TLS внутри кластера отключён — SSL завершается на NPM.
+  tls: false
+  secureBackends: false
+  # Если когда-то решишь включить TLS в кластере — заранее указали secret.
+  # tlsSecret: longhorn.local-tls
+  path: /
+  pathType: Prefix
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false" # редирект делает NPM
+  secrets: []
+
+# PodSecurityPolicy нам не нужен (современные кластера — PSA).
+enablePSP: false
+
+# Namespace override (если ставишь как саб-чарт).
+namespaceOverride: ""
+
+# Аннотации на DaemonSet Longhorn Manager (необязательно).
+annotations: {}
+
+serviceAccount:
+  annotations: {}
+
+metrics:
+  serviceMonitor:
+    # Включаем, чтобы Rancher Monitoring подхватил метрики Longhorn.
+    enabled: true
+    additionalLabels:
+      release: rancher-monitoring
+    annotations: {}
+    interval: ""
+    scrapeTimeout: ""
+    relabelings: []
+    metricRelabelings: []
+
+openshift:
+  enabled: false
+  ui:
+    route: "longhorn-ui"
+    port: 443
+    proxy: 8443
+
+enableGoCoverDir: false
+
+# Дополнительные манифесты (если нужно что-то подложить вместе с чартом).
+extraObjects: []

@@ -1,7 +1,7 @@
 # === Rook-Ceph Operator (control plane) ===
 image:
   repository: docker.io/rook/ceph
-  tag: v1.18.4
+  tag: v1.18.7
   pullPolicy: IfNotPresent
 
 # CRD создаём оператором (при первом деплое оставить true)
@@ -57,23 +57,23 @@ csi:
   # ========================================================================
   # Это Deployment (не DaemonSet) - запускается только на storage-нодах
 
-  # Tolerations - разрешает запуск на нодах с taint "workload=ceph:NoSchedule"
+  # Tolerations - разрешает запуск на нодах с taint "workload=storage:NoSchedule"
   # Storage-ноды имеют этот taint чтобы обычные приложения на них не попали
   provisionerTolerations:
     - key: "workload" # Ключ taint на storage-нодах
       operator: "Equal" # Точное совпадение
-      value: "ceph" # Значение taint
+      value: "storage" # Значение taint
       effect: "NoSchedule" # Тип эффекта
 
   # NodeAffinity - ОБЯЗАТЕЛЬНО запускать только на storage-нодах
-  # Storage-ноды помечены label "role: storage"
+  # Storage-ноды помечены label "role=ceph"
   provisionerNodeAffinity: |
     requiredDuringSchedulingIgnoredDuringExecution:
       nodeSelectorTerms:
         - matchExpressions:
             - key: role
               operator: In
-              values: ["storage"]
+              values: ["ceph"]
 
   # Количество реплик Provisioner для High Availability (HA)
   # 2 реплики = если одна storage-нода упадет, вторая продолжит работу
@@ -93,11 +93,11 @@ csi:
   #   - Если приложение на storage-ноде → nodeplugin нужен на storage-ноде
   #   - Masters обычно исключены (на них не запускают приложения)
 
-  # Tolerations - разрешает запуск на storage-нодах (где taint workload=ceph)
+  # Tolerations - разрешает запуск на storage-нодах (где taint workload=storage)
   pluginTolerations:
     - key: "workload" # Ключ taint
       operator: "Equal" # Точное совпадение
-      value: "ceph" # Значение taint
+      value: "storage" # Значение taint
       effect: "NoSchedule" # Тип эффекта
 
   # pluginNodeAffinity НЕ задаём - nodeplugin запустится на всех нодах
@@ -190,4 +190,3 @@ csi:
 # discoveryDaemon выключен — он авто-сканит устройства. Мы добавляем их руками в кластерной части.
 enableDiscoveryDaemon: false
 # TODO: Добавить пробы.
-

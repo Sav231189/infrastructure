@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ceph-dashboard
+  namespace: rook-ceph
+  annotations:
+    # Т.к. backend уже использует HTTPS (ssl: true в конфиге), нужно проксировать на HTTPS
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    # Разрешаем самоподписанный сертификат от Ceph
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "false"
+    # Включаем SSL редирект
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # Cert-manager для автоматического Let's Encrypt (если установлен)
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ceph.stroy-track.ru
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rook-ceph-mgr-dashboard
+                port:
+                  number: 8443

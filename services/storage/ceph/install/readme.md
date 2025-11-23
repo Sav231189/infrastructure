@@ -9,17 +9,21 @@
 ### Настройка на каждой storage-ноде
 
 ```bash
-# Замените NODE_NAME на имя вашей ноды (например: data-worker-1)
+# Запросить имя ноды с возможностью использовать значение по умолчанию
+DEFAULT_NODE_NAME=$(hostname)
+read -p "Введите NODE_NAME [по умолчанию: ${DEFAULT_NODE_NAME}]: " NODE_NAME
+NODE_NAME=${NODE_NAME:-$DEFAULT_NODE_NAME}
+echo "NODE_NAME: ${NODE_NAME}"
 
 # 1. Добавить label для идентификации storage-ноды
-kubectl label nodes NODE_NAME role=storage --overwrite
+kubectl label nodes ${NODE_NAME} role=ceph --overwrite
 
 # 2. Добавить taint чтобы обычные поды не запускались на storage-нодах
-kubectl taint nodes NODE_NAME workload=ceph:NoSchedule --overwrite
+# kubectl taint nodes ${NODE_NAME} workload=storage:NoSchedule --overwrite
 
 # 3. Проверить настройки
-kubectl get node NODE_NAME --show-labels
-kubectl describe node NODE_NAME | grep -A5 Taints
+kubectl get node ${NODE_NAME} --show-labels
+kubectl describe node ${NODE_NAME} | grep -A5 Taints
 ```
 
 **Ожидаемый результат:**
@@ -122,50 +126,76 @@ nodes:
 #### 2. LVM root mount (расширенный не размеченный раздел)
 
 ```bash
-# На КАЖДОЙ ноде с расширенным разделом выполните:
+# Шаг 0: Проверить свободное место и узнать номер свободного раздела
+parted -s /dev/sda unit GiB print free
+# Должно показать:
+# 3    1.75GiB  30.0GiB  28.2GiB
+#      30.0GiB  100GiB   70.0GiB  Free Space
+# Следующий номер раздела будет: 4
 
-# Устанавливаем переменные для имени диска
-DISK_NAME="sda"
-# Устанавливаем переменные для номера ноды
-NODE_NUMBER=1
-# Устанавливаем переменные для номера раздела
-PART_NUMBER=4
-# Устанавливаем переменные для имени группы томов (имя УНИКАЛЬНОЕ для каждой ноды!)
-VG_NAME="ceph-vg-${NODE_NUMBER}"
+# Запросить номер раздела для создания
+DEFAULT_PARTITION=4
+read -p "Введите номер раздела для Ceph [по умолчанию: ${DEFAULT_PARTITION}]: " PARTITION_NUM
+PARTITION_NUM=${PARTITION_NUM:-$DEFAULT_PARTITION}
+echo "Используется номер раздела: ${PARTITION_NUM}"
 
-# Шаг 1: Создать раздел (если ещё не создан)
-# ВАЖНО: Если раздел уже есть, но создан неправильно - сначала удалите его:
-# sgdisk --delete=4 /dev/sda && partprobe /dev/sda
-# Затем создайте правильно:
-sgdisk --new=${PART_NUMBER}:-0:0 --typecode=${PART_NUMBER}:8300 --change-name=${PART_NUMBER}:ceph-osd /dev/${DISK_NAME}
-partprobe /dev/${DISK_NAME}
+# Шаг 1: Исправить GPT таблицу (если есть предупреждение)
+echo "Исправление GPT таблицы..."
+sgdisk --move-second-header /dev/sda
+partprobe /dev/sda
 
-# Проверить результат
-sudo parted -s /dev/${DISK_NAME} unit GiB print free
+# Шаг 2: Удалить раздел если он уже создан неправильно
+if [ -e /dev/sda${PARTITION_NUM} ]; then
+  echo "Удаление существующего раздела sda${PARTITION_NUM}..."
+  sgdisk --delete=${PARTITION_NUM} /dev/sda
+  partprobe /dev/sda
+  sleep 2
+fi
+
+# Шаг 3: Создать раздел правильно
+echo "Создание раздела sda${PARTITION_NUM}..."
+sgdisk --new=${PARTITION_NUM}:0:-0 --typecode=${PARTITION_NUM}:8300 --change-name=${PARTITION_NUM}:ceph-osd /dev/sda
+partprobe /dev/sda
+sleep 2
+
+# Шаг 4: Проверить результат создания раздела
+echo "=== Проверка созданного раздела sda${PARTITION_NUM} ==="
+parted -s /dev/sda unit GiB print free
 lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT
-# Должно показать: sda4 ~30G part (без FSTYPE)
+# Должно показать: sda${PARTITION_NUM} с размером свободного места (например, ~70G) без FSTYPE
 
-# Шаг 2: Создать Physical Volume
-pvcreate /dev/${DISK_NAME}${PART_NUMBER}
+# Шаг 5: Создать Physical Volume
+pvcreate /dev/sda${PARTITION_NUM}
+pvdisplay /dev/sda${PARTITION_NUM}
 
-# Шаг 3: Создать Volume Group (имя УНИКАЛЬНОЕ для каждой ноды!)
-vgcreate ${VG_NAME} /dev/${DISK_NAME}${PART_NUMBER}
+# Шаг 6: Запросить имя Volume Group (уникальное для каждой ноды!)
+DEFAULT_VG_NAME="ceph-vg-1"
+read -p "Введите имя Volume Group [по умолчанию: ${DEFAULT_VG_NAME}]: " VG_NAME
+VG_NAME=${VG_NAME:-$DEFAULT_VG_NAME}
+echo "Используется VG: ${VG_NAME}"
+echo "Для других нод используйте: ceph-vg-2, ceph-vg-3 и т.д."
 
-# Шаг 4: Создать Logical Volume на ВСЁ пространство
-lvcreate -l 100%FREE -n osd-lv ceph-vg-1
+# Шаг 7: Создать Volume Group
+vgcreate ${VG_NAME} /dev/sda${PARTITION_NUM}
+vgdisplay ${VG_NAME}
 
-# Шаг 5: Проверить доступность LVM тома
-# Проверить что LVM том создан и доступен
+# Шаг 8: Создать Logical Volume на ВСЁ пространство
+lvcreate -l 100%FREE -n osd-lv ${VG_NAME}
+
+# Шаг 9: Проверить доступность LVM тома
+echo "=== Проверка созданного LVM тома ==="
 lvdisplay /dev/${VG_NAME}/osd-lv
-# Должно показать: LV Path = /dev/ceph-vg-1/osd-lv, LV Size = ~50 GiB
+# Должно показать: LV Path = /dev/${VG_NAME}/osd-lv, LV Size = размер свободного места
 
-# Альтернативная проверка через lsblk
+# Проверка через lsblk
 lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT
-# Должно показать: ceph-vg-1/osd-lv с размером ~50G и типом lvm
+# Должно показать: ${VG_NAME}/osd-lv с размером свободного места и типом lvm
 
 # (Опционально) Проверка через ceph-volume (если установлен ceph-base)
 # ceph-volume inventory /dev/${VG_NAME}/osd-lv
 # Должно показать: LV Status = available
+
+echo "✅ Готово! LVM том создан: /dev/${VG_NAME}/osd-lv"
 ```
 
 В конфигурации Ceph используйте LVM путь:
@@ -180,14 +210,17 @@ nodes:
 #### 3. Disk ID
 
 ```bash
-# Устанавливаем переменные для имени диска
-DISK_NAME="sda"
-# Устанавливаем переменные для номера раздела
-PART_NUMBER=4
+# Показать разделы и ID дисков (например, sda4)
+lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT
+
+# Запросить ID диска для создания
+DEFAULT_DISK_ID="sda4"
+read -p "Введите ID диска для Ceph [по умолчанию: ${DEFAULT_DISK_ID}]: " DISK_ID
+DISK_ID=${DISK_ID:-$DEFAULT_DISK_ID}
+echo "Используется ID диска: ${DISK_ID}"
 
 # Показать ID дисков
-ls -l /dev/disk/by-id/ | grep ${DISK_NAME}${PART_NUMBER}
-# Должно показать: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part4 -> /dev/sda4
+ls -l /dev/disk/by-id/ | grep ${DISK_ID}
 ```
 
 Теперь в конфигурации Ceph используйте путь к диску:
@@ -199,51 +232,13 @@ nodes:
       - name: /dev/sda4 # ← ID Disk путь (scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part4)
 ```
 
-## ⚙️ Установка через Helm
+## ⚙️ Установка через Helm (Lens UI)
 
-> Создать namespace rook-ceph
+> values-operator.yaml (для rook-ceph)
 
-```bash
-kubectl create namespace rook-ceph
-```
 
-### 2. Добавить Helm репозиторий
+> values-cluster.yaml (для rook-ceph-cluster)
 
-```bash
-helm repo add rook-release https://charts.rook.io/release
-helm repo update
-```
-
-### 3. Установить Rook-Ceph Operator
-
-```bash
-helm install rook-ceph-operator rook-release/rook-ceph-operator \
-  --namespace rook-ceph \
-  --create-namespace \
-  --values values-operator.yaml
-```
-
-> 💡 Файл конфигурации: [`values-operator.yaml`](./values-operator.yaml)
-
-### 4. Установить Rook-Ceph Cluster
-
-После установки оператора (подождите ~30 секунд):
-
-```bash
-helm install rook-ceph-cluster rook-release/rook-ceph-cluster \
-  --namespace rook-ceph \
-  --values values-cluster.yaml
-```
-
-> 💡 Файл конфигурации: [`values-cluster.yaml`](./values-cluster.yaml)
-
----
-
-## 📄 Файлы конфигурации
-
-> 💡 Файл конфигурации operator: [`values-operator.yaml`](./values-operator.yaml)
-
-> 💡 Файл конфигурации cluster: [`values-cluster.yaml`](./values-cluster.yaml)
 
 > 🌐 Dashboard - получить пароль
 
@@ -258,7 +253,9 @@ kubectl -n rook-ceph get secret rook-ceph-dashboard-password -o jsonpath="{['dat
 
 Создайте Ingress для доступа к Dashboard через браузер:
 
-```bash
+> ingress.yaml
+
+```bash (ingress.yaml)
 kubectl apply -f - <<EOF
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -290,14 +287,14 @@ spec:
 EOF
 ```
 
-Теперь Dashboard доступен по адресу: `https://ceph.stroy-track.local`
+Теперь Dashboard доступен по адресу: `https://ceph.stroy-track.ru` -> ingress https://ip:433
 
 ---
 
 ## Добавление новой ноды
 
 1. Подготовьте диск на новой VPS (см. [Подготовка дисков](#-подготовка-дисков-на-vps))
-2. Обновите файл [`values-cluster.yaml`](./values-cluster.yaml), добавив новую ноду в секцию `storage.nodes`
+2. Обновите rook-ceph-cluster `values-cluster.yaml`, добавив новую ноду в секцию `storage.nodes`
 3. Примените изменения:
 
 ```bash
