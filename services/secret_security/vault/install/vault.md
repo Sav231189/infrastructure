@@ -219,11 +219,19 @@ server:
   livenessProbe:
     enabled: false
 
-  # PVC под данные Raft (пока longhorn; позже поменяешь на ceph)
+  # # PVC под данные Raft (пока longhorn; позже поменяешь на ceph)
+  # dataStorage:
+  #   enabled: true
+  #   size: 10Gi
+  #   storageClass: "longhorn"
+  #   accessMode: ReadWriteOnce
+  #   mountPath: "/vault/data"
+
+  # PVC Ceph
   dataStorage:
     enabled: true
     size: 10Gi
-    storageClass: "longhorn"
+    storageClass: "ceph-rbd"
     accessMode: ReadWriteOnce
     mountPath: "/vault/data"
 
