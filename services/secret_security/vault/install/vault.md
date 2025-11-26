@@ -15,7 +15,7 @@
 
 ## Установка
 
-- При установке хук может установиться раньше vault, и блокировать PVC, требует пере деплой.
+- При установке хук может установиться раньше vault, и блокировать PVC, требует обновить Release.
 
 > Values
 
@@ -299,16 +299,16 @@ kubectl -n vault exec -it <vault-1760342381-0> -c vault -- vault operator init
 
 ```bash
 # Присоединить к первому Pod
-kubectl -n vault exec -it <vault-1760342381-0> -c vault -- vault operator raft join http://<vault-1760342381-0>.vault-<vault-1760342381-0>.vault-internal:8200
+kubectl -n vault exec -it vault-2 -c vault -- vault operator raft join http://vault-0.vault-internal:8200
 ```
 
 > Распечатать Pod через
 
 ```bash
-kubectl -n vault exec -it <vault-1760342381-0> -c vault -- vault operator unseal <Unseal-Key-1>
+kubectl -n vault exec -it vault-2 -c vault -- vault operator unseal <Unseal-Key-1>
 ```
 
-> Проверить статус Pod <vault-1760342381-0>
+> Проверить статус Pod vault-2
 
 ```bash
 # Проверить статус vault-1760342381-0
@@ -398,6 +398,25 @@ kubectl -n my-apps get pod myapp-test -w
 
 # Просмотреть логи
 kubectl -n my-apps logs myapp-test -c app
+```
+
+## Инициализация Vault через UI
+
+> Выбрать Create инициализацию Vault
+
+- Указать сколько создать ключей unseal для разблокировки Vault (5 шт)
+- Указать сколько ключей unseal для разблокировки Vault нужно ввести (3 шт)
+
+> Подключение к Vault UI (forwarding/domain/port) и выбрать Unseal (подключение к Vault через UI)
+
+- Этот DNS адрес автоматически разрешается внутри Kubernetes:
+  - vault-0 - имя первого пода StatefulSet
+  - vault-internal - имя headless service (создается автоматически Helm chart'ом)
+  - 8200 - порт Vault API
+
+```yml
+## Адрес подключения к Vault через UI
+http://vault-0.vault-internal:8200
 ```
 
 ## 📋 Настройка Vault Injection для приложений Пошаговая инструкция
