@@ -12,38 +12,11 @@
 
 ---
 
-## Шаг 4: Настройка домена в NPM
+## Шаг 1: Установка через терминал
 
-Настройте прокси в Nginx Proxy Manager:
+### 1. Создайте файл values.yaml
 
-1. **Proxy Hosts** → **Add Proxy Host**
-2. Заполните:
-   - **Domain Names:** `woodpecker.stroy-track.ru`
-   - **Scheme:** `http` (не https!)
-   - **Forward Hostname/IP:** IP вашего Ingress (узнать в Lens: **Network** → **Services** → `ingress-nginx-controller`)
-   - **Forward Port:** `80`
-   - **Websockets Support:** ✅ (включить)
-3. Вкладка **SSL:**
-   - **SSL Certificate:** Request a new Let's Encrypt Certificate
-   - **Force SSL:** ✅
-   - **Email:** ваш email
-4. **Save**
-
----
-
-## Шаг 2: Установка через Lens
-
-1. **Lens** → ваш кластер
-2. **Helm** (левое меню) → **Releases**
-3. **"+"** (Install Chart)
-4. **Chart:** `oci://ghcr.io/woodpecker-ci/helm/woodpecker`
-5. **Namespace:** создайте `woodpecker`
-6. **Release name:** `woodpecker`
-7. Вставьте **Values.yaml** ниже
-8. **Измените** только URL (домен)
-9. **Install**
-
-### Values.yaml
+Создайте файл `woodpecker-values.yaml` со следующим содержимым:
 
 ⚠️ **Измените только URL на ваш домен:**
 
@@ -93,11 +66,38 @@ database:
   type: sqlite
 ```
 
+### 2. Выполните команды установки
+
+Откройте терминал и выполните:
+
+```bash
+# Создать namespace
+kubectl create namespace woodpecker
+
+# Установить Woodpecker
+helm install woodpecker \
+  oci://ghcr.io/woodpecker-ci/helm/woodpecker \
+  --namespace woodpecker \
+  --values woodpecker-values.yaml
+```
+
+**Ожидайте:** `STATUS: deployed`
+
 ---
 
-## Шаг 3: Проверка через Lens
+## Шаг 2: Проверка установки через Lens
 
-1. **Lens** → **Workloads** → **Pods**
+Откройте **Lens** и проверьте:
+
+### 1. Helm Release
+
+1. **Helm** (левое меню) → **Releases**
+2. Namespace: `woodpecker`
+3. Должен быть релиз: `woodpecker` со статусом **Deployed**
+
+### 2. Pods (поды)
+
+1. **Workloads** → **Pods**
 2. Namespace: `woodpecker`
 3. Должны быть **Running**:
    - `woodpecker-server-xxxxx` (1 шт)
@@ -107,9 +107,34 @@ database:
 
 - Кликните на под → **Logs** → смотрите ошибку
 
+### 3. Ingress
+
+1. **Network** → **Ingresses**
+2. Namespace: `woodpecker`
+3. Должен быть ingress с вашим доменом
+
 ---
 
-## Шаг 1: Создать GitHub OAuth App
+## Шаг 3: Настройка домена в NPM
+
+Настройте прокси в Nginx Proxy Manager:
+
+1. **Proxy Hosts** → **Add Proxy Host**
+2. Заполните:
+   - **Domain Names:** `woodpecker.stroy-track.ru`
+   - **Scheme:** `http` (не https!)
+   - **Forward Hostname/IP:** IP вашего Ingress (узнать в Lens: **Network** → **Services** → `ingress-nginx-controller`)
+   - **Forward Port:** `80`
+   - **Websockets Support:** ✅ (включить)
+3. Вкладка **SSL:**
+   - **SSL Certificate:** Request a new Let's Encrypt Certificate
+   - **Force SSL:** ✅
+   - **Email:** ваш email
+4. **Save**
+
+---
+
+## Шаг 4: Создать GitHub OAuth App
 
 1. Откройте https://github.com/settings/developers
 2. **New OAuth App**
@@ -311,39 +336,54 @@ git push origin stage  # или prod
 
 ---
 
-## Масштабирование через Lens
+## Масштабирование агентов
 
 Увеличить количество агентов (больше параллельных сборок):
 
-1. **Lens** → **Helm** → **Releases**
-2. Найдите `woodpecker` → правый клик → **Upgrade**
-3. В values.yaml измените:
+### Через терминал:
+
+1. Измените в файле `woodpecker-values.yaml`:
 
 ```yaml
 agent:
   replicas: 5 # было 2
 ```
 
-4. **Upgrade**
+2. Выполните команду:
 
-Проверка:
+```bash
+helm upgrade woodpecker \
+  oci://ghcr.io/woodpecker-ci/helm/woodpecker \
+  --namespace woodpecker \
+  --values woodpecker-values.yaml
+```
 
-- **Workloads** → **Pods** → должно быть 5 агентов
+### Проверка через Lens:
+
+1. **Workloads** → **Pods** → namespace: `woodpecker`
+2. Должно быть 5 подов `woodpecker-agent-xxxxx`
 
 ---
 
-## Удаление через Lens
+## Удаление
 
-1. **Lens** → **Helm** → **Releases**
-2. Найдите `woodpecker`
-3. Правый клик → **Delete**
-4. Подтвердите удаление
+### Через терминал:
 
-**Удалить данные (если нужно):**
+```bash
+# Удалить Helm release
+helm uninstall woodpecker -n woodpecker
 
-1. **Storage** → **Persistent Volume Claims**
-2. Namespace: `woodpecker`
-3. Выберите PVC → правый клик → **Delete**
+# Удалить PVC (данные)
+kubectl delete pvc -n woodpecker --all
+
+# Удалить namespace
+kubectl delete namespace woodpecker
+```
+
+### Проверка через Lens:
+
+1. **Helm** → **Releases** → namespace `woodpecker` должен исчезнуть
+2. **Namespaces** → `woodpecker` должен быть удален
 
 ---
 
