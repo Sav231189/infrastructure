@@ -21,7 +21,7 @@
    - **Homepage URL:** `https://woodpecker.stroy-track.ru`
    - **Authorization callback URL:** `https://woodpecker.stroy-track.ru/authorize`
 4. **Register application**
-5. Скопируйте **Client ID** и **Client Secret**
+5. Скопируйте **Client ID** и **Client Secret** (понадобятся в UI позже)
 
 ---
 
@@ -34,17 +34,16 @@
 5. **Namespace:** создайте `woodpecker`
 6. **Release name:** `woodpecker`
 7. Вставьте **Values.yaml** ниже
-8. **Измените** 4 строки (помечены ← ЗАМЕНИТЬ)
+8. **Измените** только URL (домен)
 9. **Install**
 
 ### Values.yaml
 
-⚠️ **Измените 4 строки (помечены ← ЗАМЕНИТЬ):**
+⚠️ **Измените только URL на ваш домен:**
 
 ```yaml
 server:
   host: "https://woodpecker.stroy-track.ru" # ← ЗАМЕНИТЬ: ваш домен
-  adminUser: "Sav231189" # ← ЗАМЕНИТЬ: ваш GitHub логин
   logLevel: "info"
   replicas: 1
   resources:
@@ -56,13 +55,8 @@ server:
       memory: 512Mi
   persistence:
     enabled: true
-    storageClass: "longhorn"
+    storageClass: "ceph-rbd"
     size: 5Gi
-
-github:
-  enabled: true
-  client: "your-github-client-id" # ← ЗАМЕНИТЬ: Client ID из шага 1
-  secret: "your-github-client-secret" # ← ЗАМЕНИТЬ: Secret из шага 1
 
 agent:
   replicas: 2
@@ -128,12 +122,27 @@ database:
 
 ---
 
-## Шаг 5: Вход в Woodpecker UI
+## Шаг 5: Первый вход и настройка GitHub
+
+### 1. Откройте Woodpecker UI
 
 1. Откройте `https://woodpecker.stroy-track.ru`
-2. Нажмите **Login with GitHub**
-3. GitHub попросит авторизовать → **Authorize**
-4. Вы в Woodpecker! 🎉
+2. Увидите страницу настройки
+
+### 2. Настройте GitHub OAuth в UI
+
+1. На странице входа выберите **GitHub**
+2. Заполните форму:
+   - **Client ID:** вставьте Client ID из шага 1
+   - **Client Secret:** вставьте Client Secret из шага 1
+3. Нажмите **Continue** или **Save**
+4. Вас перенаправит на GitHub для авторизации
+5. Нажмите **Authorize**
+6. Вы в Woodpecker! 🎉
+
+> **Важно:** Первый вошедший пользователь автоматически получит права администратора.
+
+> **Альтернатива:** Если кнопка GitHub не появляется, перейдите в **Admin Settings** (иконка шестеренки) → **Configure** → добавьте GitHub настройки там.
 
 ---
 
