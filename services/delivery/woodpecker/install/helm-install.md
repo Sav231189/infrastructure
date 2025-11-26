@@ -12,16 +12,22 @@
 
 ---
 
-## Шаг 1: Создать GitHub OAuth App
+## Шаг 4: Настройка домена в NPM
 
-1. Откройте https://github.com/settings/developers
-2. **New OAuth App**
-3. Заполните:
-   - **Application name:** `Woodpecker CI`
-   - **Homepage URL:** `https://woodpecker.stroy-track.ru`
-   - **Authorization callback URL:** `https://woodpecker.stroy-track.ru/authorize`
-4. **Register application**
-5. Скопируйте **Client ID** и **Client Secret** (понадобятся в UI позже)
+Настройте прокси в Nginx Proxy Manager:
+
+1. **Proxy Hosts** → **Add Proxy Host**
+2. Заполните:
+   - **Domain Names:** `woodpecker.stroy-track.ru`
+   - **Scheme:** `http` (не https!)
+   - **Forward Hostname/IP:** IP вашего Ingress (узнать в Lens: **Network** → **Services** → `ingress-nginx-controller`)
+   - **Forward Port:** `80`
+   - **Websockets Support:** ✅ (включить)
+3. Вкладка **SSL:**
+   - **SSL Certificate:** Request a new Let's Encrypt Certificate
+   - **Force SSL:** ✅
+   - **Email:** ваш email
+4. **Save**
 
 ---
 
@@ -103,22 +109,16 @@ database:
 
 ---
 
-## Шаг 4: Настройка домена в NPM
+## Шаг 1: Создать GitHub OAuth App
 
-Настройте прокси в Nginx Proxy Manager:
-
-1. **Proxy Hosts** → **Add Proxy Host**
-2. Заполните:
-   - **Domain Names:** `woodpecker.stroy-track.ru`
-   - **Scheme:** `http` (не https!)
-   - **Forward Hostname/IP:** IP вашего Ingress (узнать в Lens: **Network** → **Services** → `ingress-nginx-controller`)
-   - **Forward Port:** `80`
-   - **Websockets Support:** ✅ (включить)
-3. Вкладка **SSL:**
-   - **SSL Certificate:** Request a new Let's Encrypt Certificate
-   - **Force SSL:** ✅
-   - **Email:** ваш email
-4. **Save**
+1. Откройте https://github.com/settings/developers
+2. **New OAuth App**
+3. Заполните:
+   - **Application name:** `Woodpecker CI`
+   - **Homepage URL:** `https://woodpecker.stroy-track.ru`
+   - **Authorization callback URL:** `https://woodpecker.stroy-track.ru/authorize`
+4. **Register application**
+5. Скопируйте **Client ID** и **Client Secret** (понадобятся в UI Woodpecker CI позже)
 
 ---
 
