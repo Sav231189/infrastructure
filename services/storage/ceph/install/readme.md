@@ -8,13 +8,13 @@
 
 ### Настройка на каждой storage-ноде
 
-> Запросить имя ноды с возможностью использовать значение по умолчанию
+> Установить переменную NODE_NAME с возможностью использовать значение по умолчанию
 
 ```bash
 DEFAULT_NODE_NAME=$(hostname)
-read -p "Введите NODE_NAME [по умолчанию: ${DEFAULT_NODE_NAME}]: " NODE_NAME
+read -p "Установить переменную NODE_NAME [по умолчанию: ${DEFAULT_NODE_NAME}]: " NODE_NAME
 NODE_NAME=${NODE_NAME:-$DEFAULT_NODE_NAME}
-echo "NODE_NAME: ${NODE_NAME}"
+echo "Переменная NODE_NAME установлена: ${NODE_NAME}"
 ```
 
 > Проверить настройки
