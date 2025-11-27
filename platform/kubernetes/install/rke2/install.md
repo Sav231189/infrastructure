@@ -1,4 +1,4 @@
-# RKE2 Kubernetes Cluster - Руководство по установке
+## RKE2 Kubernetes Cluster - Руководство по установке
 
 - Версия RKE2 (должна совпадать на всех нодах!)
 - ⚠️ **Server нода: МИНИМУМ 4 ГБ RAM**
@@ -56,9 +56,9 @@ node-label:
   - "vault=enabled"
 ```
 
-## Подготовка Nodes
+## Подготовка Nodes (Ubuntu 24.04 LTS)
 
-> - Ubuntu 24.04 LTS
+> Установить необходимые пакеты и настроить систему
 
 ```bash
 # stop the software firewall
@@ -92,7 +92,7 @@ cat /proc/swaps
 reboot
 ```
 
-## Настройка Reverse Path Filtering (RPF) для overlay-сетей
+> Настройка Reverse Path Filtering (RPF) для overlay-сетей
 
 **Проблема**: Kubernetes использует overlay-сети (flannel/canal), где пакеты входят через физический интерфейс (ens18), а выходят через виртуальный (flannel.1). Strict RPF считает такую асимметрию маршрутизации спуфингом и дропает пакеты.
 
