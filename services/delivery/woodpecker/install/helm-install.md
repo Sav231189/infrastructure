@@ -10,6 +10,11 @@
 - **Agent** - выполняет сборки (масштабируется)
 - **SQLite** - встроенная база данных
 
+**Секреты:**
+
+- ✅ **Хранятся** в Kubernetes Secret
+- ✅ **Передаются** через переменные окружения
+
 ---
 
 ## Шаг 1: Создать GitHub OAuth App
@@ -17,17 +22,22 @@
 1. Откройте https://github.com/settings/developers
 2. **New OAuth App**
 3. Заполните:
-   - **Application name:** `Woodpecker CI`
-   - **Homepage URL:** `https://woodpecker.stroy-track.ru`
+   - **Application name:** `Woodpecker CI` (или любое)
+   - **Homepage URL:** `https://woodpecker.stroy-track.ru` ⚠️ **ВАЖНО!**
    - **Authorization callback URL:** `https://woodpecker.stroy-track.ru/authorize`
 4. **Register application**
-5. Скопируйте:
-   - **Client ID**
-   - **Client Secret** (кнопка Generate)
+5. Перейдите в **Permissions & events** → установите:
+   - **Account permissions** → **Email addresses:** Read ✅
+   - **Repository permissions** → **Contents:** Read & Write ✅
+   - **Repository permissions** → **Metadata:** Read & Write ✅
+   - **Repository permissions** → **Commit statuses:** Read & Write ✅
+6. Скопируйте **Client ID** и сгенерируйте **Client Secret**
+
+> ⚠️ **КРИТИЧНО:** Homepage URL должен совпадать с WOODPECKER_HOST!
 
 ---
 
-## Шаг 2: Создать Kubernetes Secret
+## Шаг 2: Создать namespace и Secret
 
 ### 1. Создайте namespace
 
@@ -35,86 +45,50 @@
 kubectl create namespace woodpecker
 ```
 
-### 2. Сгенерируйте Agent Secret
+### 2. Создайте Secret с GitHub данными
 
-```bash
-openssl rand -hex 32
-```
-
-Скопируйте результат.
-
-### 3. Создайте Secret с данными
+**Вариант A: Через kubectl**
 
 ```bash
 kubectl create secret generic woodpecker-secret \
-  --from-literal=WOODPECKER_GITHUB_CLIENT='ваш-github-client-id' \
-  --from-literal=WOODPECKER_GITHUB_SECRET='ваш-github-client-secret' \
-  --from-literal=WOODPECKER_AGENT_SECRET='результат-из-openssl' \
-  --from-literal=WOODPECKER_ADMIN='Sav231189' \
+  --from-literal=WOODPECKER_GITHUB='true' \
+  --from-literal=WOODPECKER_GITHUB_CLIENT='YOUR_CLIENT_ID' \
+  --from-literal=WOODPECKER_GITHUB_SECRET='YOUR_CLIENT_SECRET' \
+  --from-literal=WOODPECKER_HOST='https://example.com' \
+  --from-literal=WOODPECKER_ADMIN='YOUR_GITHUB_USERNAME' \
   --namespace woodpecker
 ```
 
-> **Будущее:** Можно интегрировать с Vault через External Secrets Operator для автоматической синхронизации секретов.
+**Вариант B: Через Lens (UI)**
+
+Lens → **Config** → **Secrets** → **Create**
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: woodpecker-secret
+  namespace: woodpecker
+type: Opaque
+stringData:
+  WOODPECKER_GITHUB: "true"
+  WOODPECKER_GITHUB_CLIENT: "YOUR_CLIENT_ID"
+  WOODPECKER_GITHUB_SECRET: "YOUR_CLIENT_SECRET"
+  WOODPECKER_HOST: "https://example.com"
+  WOODPECKER_ADMIN: "YOUR_GITHUB_USERNAME"
+```
 
 ---
 
 ## Шаг 3: Установка через Helm
 
-### 1. Создайте файл woodpecker-values.yaml
+### 1. Создайте конфигурацию на сервере с kubectl
 
-⚠️ **Измените только домен:**
-
-```yaml
-server:
-  host: "https://woodpecker.stroy-track.ru" # ← ЗАМЕНИТЬ: ваш домен
-  logLevel: "info"
-  replicas: 1
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  persistence:
-    enabled: true
-    storageClass: "ceph-rbd"
-    size: 5Gi
-  env:
-    WOODPECKER_GITHUB: "true"
-  extraSecretNamesForEnvFrom:
-    - woodpecker-secret
-
-agent:
-  replicas: 2
-  resources:
-    requests:
-      cpu: 200m
-      memory: 256Mi
-    limits:
-      cpu: 2000m
-      memory: 2Gi
-  extraSecretNamesForEnvFrom:
-    - woodpecker-secret
-
-ingress:
-  enabled: true
-  className: "nginx"
-  hosts:
-    - host: woodpecker.stroy-track.ru # ← (тот же домен)
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: []
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
-
-database:
-  type: sqlite
+```bash
+nano /tmp/woodpecker-values.yaml
 ```
+
+> 📋 **Пример:** см. файл `woodpecker-values.yaml` в этой папке
 
 ### 2. Установите Woodpecker
 
@@ -122,55 +96,59 @@ database:
 helm install woodpecker \
   oci://ghcr.io/woodpecker-ci/helm/woodpecker \
   --namespace woodpecker \
-  --values woodpecker-values.yaml
+  --values /tmp/woodpecker-values.yaml
+```
+
+### 3. Обновление (при изменении конфигурации)
+
+```bash
+helm upgrade woodpecker \
+  oci://ghcr.io/woodpecker-ci/helm/woodpecker \
+  --namespace woodpecker \
+  --values /tmp/woodpecker-values.yaml
 ```
 
 ---
 
-## Шаг 4: Проверка через Lens
+## Шаг 4: Проверка установки
 
-### 1. Helm Release
+### Через Lens
 
-1. **Helm** → **Releases**
-2. Namespace: `woodpecker`
-3. Статус: **Deployed**
+1. **Helm** → **Releases** → Namespace: `woodpecker` → Статус: **Deployed** ✅
+2. **Workloads** → **Pods** → Все **Running** ✅
+3. **Network** → **Ingresses** → Домен настроен ✅
 
-### 2. Pods
+### Через kubectl
 
-1. **Workloads** → **Pods**
-2. Namespace: `woodpecker`
-3. Должны быть **Running**:
-   - `woodpecker-server-0` (1 шт)
-   - `woodpecker-agent-xxxxx` (2 шт)
+```bash
+# Проверить поды
+kubectl get pods -n woodpecker
 
-### 3. Ingress
-
-1. **Network** → **Ingresses**
-2. Namespace: `woodpecker`
-3. Должен быть ingress с доменом
+# Проверить логи (если есть проблемы)
+kubectl logs woodpecker-server-0 -n woodpecker --tail=20
+kubectl logs woodpecker-agent-0 -n woodpecker --tail=20
+```
 
 ---
 
-## Шаг 5: Настройка домена в NPM
+## Шаг 5: Настройка Nginx Proxy Manager
+
+> ⚠️ Если Ingress настроен внутри кластера, настройте внешний доступ через NPM
 
 1. **Proxy Hosts** → **Add Proxy Host**
 2. Заполните:
-   - **Domain Names:** `woodpecker.stroy-track.ru`
+   - **Domain:** `example.com`
    - **Scheme:** `http`
-   - **Forward Hostname/IP:** IP вашего Ingress (Lens: **Network** → **Services** → `ingress-nginx-controller`)
+   - **Forward Hostname/IP:** IP Ingress Controller
    - **Forward Port:** `80`
    - **Websockets Support:** ✅
-3. Вкладка **SSL:**
-   - **SSL Certificate:** Request a new Let's Encrypt Certificate
-   - **Force SSL:** ✅
-   - **Email:** ваш email
-4. **Save**
+3. **SSL** → Request Let's Encrypt Certificate
 
 ---
 
 ## Шаг 6: Первый вход
 
-1. Откройте `https://woodpecker.stroy-track.ru`
+1. Откройте `https://example.com`
 2. **Login with GitHub**
 3. **Authorize**
 4. Готово! 🎉
@@ -205,7 +183,7 @@ helm install woodpecker \
 **DOCKER_REGISTRY:**
 
 - **Name:** `DOCKER_REGISTRY`
-- **Value:** `harbor.stroy-track.ru`
+- **Value:** `example.com`
 - **Events:** ✅ все
 - **Save**
 
@@ -247,7 +225,7 @@ steps:
         from_secret: DOCKER_USERNAME
       password:
         from_secret: DOCKER_PASSWORD
-      repo: harbor.stroy-track.ru/stroytrack/${CI_REPO_NAME}
+      repo: harbor.example.com/stroytrack/${CI_REPO_NAME}
       tags:
         - ${CI_COMMIT_BRANCH}-${CI_COMMIT_SHA:0:8}
         - ${CI_COMMIT_BRANCH}-latest
@@ -277,72 +255,14 @@ git push origin stage
 
 ---
 
-## Обновление конфигурации
-
-### Изменить Secret
-
-```bash
-kubectl edit secret woodpecker-secret -n woodpecker
-```
-
-Или через Lens:
-
-1. **Config** → **Secrets** → `woodpecker-secret`
-2. **Edit** → измените Base64 значения
-3. **Save**
-
-После изменения Secret перезапустите поды:
-
-```bash
-kubectl rollout restart statefulset woodpecker-server -n woodpecker
-kubectl rollout restart deployment woodpecker-agent -n woodpecker
-```
-
-### Изменить values.yaml
-
-```bash
-helm upgrade woodpecker \
-  oci://ghcr.io/woodpecker-ci/helm/woodpecker \
-  --namespace woodpecker \
-  --values woodpecker-values.yaml
-```
-
----
-
-## Масштабирование
-
-### Увеличить агентов
-
-Измените в `woodpecker-values.yaml`:
-
-```yaml
-agent:
-  replicas: 5
-```
-
-Обновите:
-
-```bash
-helm upgrade woodpecker \
-  oci://ghcr.io/woodpecker-ci/helm/woodpecker \
-  --namespace woodpecker \
-  --values woodpecker-values.yaml
-```
-
-Проверка в Lens:
-
-- **Workloads** → **Pods** → 5 агентов
-
----
-
-## Удаление
+## Удаление Woodpecker
 
 ```bash
 # Удалить Helm release
 helm uninstall woodpecker -n woodpecker
 
-# Удалить PVC (данные)
-kubectl delete pvc -n woodpecker --all
+# Удалить данные (PVC)
+kubectl delete pvc --all -n woodpecker
 
 # Удалить Secret
 kubectl delete secret woodpecker-secret -n woodpecker
@@ -353,67 +273,19 @@ kubectl delete namespace woodpecker
 
 ---
 
-## Интеграция с Vault (будущее)
+## Интеграция с Vault (опционально, будущее)
 
-### Через External Secrets Operator
+> Для централизованного управления секретами через HashiCorp Vault
 
-1. Установите External Secrets Operator в кластер
-2. Создайте SecretStore для Vault:
+Используйте **External Secrets Operator** для автоматической синхронизации секретов из Vault в Kubernetes Secret.
 
-```yaml
-apiVersion: external-secrets.io/v1beta1
-kind: SecretStore
-metadata:
-  name: vault-backend
-  namespace: woodpecker
-spec:
-  provider:
-    vault:
-      server: "https://vault.stroy-track.ru"
-      path: "secret"
-      version: "v2"
-      auth:
-        kubernetes:
-          mountPath: "kubernetes"
-          role: "woodpecker"
-```
+**Преимущества:**
 
-3. Создайте ExternalSecret:
+- Централизованное хранилище секретов
+- Автоматическая ротация
+- Аудит доступа
 
-```yaml
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: woodpecker-secret
-  namespace: woodpecker
-spec:
-  refreshInterval: 15s
-  secretStoreRef:
-    name: vault-backend
-    kind: SecretStore
-  target:
-    name: woodpecker-secret
-    creationPolicy: Owner
-  data:
-    - secretKey: WOODPECKER_GITHUB_CLIENT
-      remoteRef:
-        key: woodpecker
-        property: github_client
-    - secretKey: WOODPECKER_GITHUB_SECRET
-      remoteRef:
-        key: woodpecker
-        property: github_secret
-    - secretKey: WOODPECKER_AGENT_SECRET
-      remoteRef:
-        key: woodpecker
-        property: agent_secret
-    - secretKey: WOODPECKER_ADMIN
-      remoteRef:
-        key: woodpecker
-        property: admin
-```
-
-Секреты будут автоматически синхронизироваться из Vault.
+**Документация:** https://external-secrets.io/
 
 ---
 
