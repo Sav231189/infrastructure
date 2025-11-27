@@ -47,7 +47,27 @@ kubectl create namespace woodpecker
 
 ### 2. Создайте Secret с GitHub данными
 
-**Вариант A: Через kubectl**
+> 💡 **Важно: Приоритет переменных окружения**
+>
+> Helm chart Woodpecker по умолчанию добавляет дефолтные значения:
+>
+> - `WOODPECKER_ADMIN: "woodpecker,admin"`
+> - `WOODPECKER_HOST: "https://xxxxxxx"`
+>
+> В Kubernetes переменные из секции `env` имеют **высший приоритет** и перебивают секреты!
+>
+> **Решение:** В `woodpecker-values.yaml` мы явно устанавливаем эти переменные в `null`:
+>
+> ```yaml
+> server:
+>   env:
+>     WOODPECKER_ADMIN: null # ← Удаляет дефолтное значение
+>     WOODPECKER_HOST: null # ← Удаляет дефолтное значение
+> ```
+>
+> Теперь переменные будут браться **ТОЛЬКО из Secret** через `extraSecretNamesForEnvFrom`! ✅
+
+**Через kubectl**
 
 ```bash
 kubectl create secret generic woodpecker-secret \
@@ -59,7 +79,7 @@ kubectl create secret generic woodpecker-secret \
   --namespace woodpecker
 ```
 
-**Вариант B: Через Lens (UI)**
+**Через Lens (UI)**
 
 Lens → **Config** → **Secrets** → **Create**
 
@@ -78,14 +98,14 @@ stringData:
   WOODPECKER_ADMIN: "YOUR_GITHUB_USERNAME"
 ```
 
----
-
-## Шаг 3: Установка через Helm
-
 ### 1. Создайте конфигурацию на сервере с kubectl
 
 ```bash
-nano /tmp/woodpecker-values.yaml
+# Создайте папку tmp если её нет
+mkdir -p tmp
+
+# Создайте файл конфигурации
+nano tmp/woodpecker-values.yaml
 ```
 
 > 📋 **Пример:** см. файл `woodpecker-values.yaml` в этой папке
@@ -96,7 +116,7 @@ nano /tmp/woodpecker-values.yaml
 helm install woodpecker \
   oci://ghcr.io/woodpecker-ci/helm/woodpecker \
   --namespace woodpecker \
-  --values /tmp/woodpecker-values.yaml
+  --values tmp/woodpecker-values.yaml
 ```
 
 ### 3. Обновление (при изменении конфигурации)
@@ -105,7 +125,7 @@ helm install woodpecker \
 helm upgrade woodpecker \
   oci://ghcr.io/woodpecker-ci/helm/woodpecker \
   --namespace woodpecker \
-  --values /tmp/woodpecker-values.yaml
+  --values tmp/woodpecker-values.yaml
 ```
 
 ---
@@ -117,7 +137,11 @@ helm upgrade woodpecker \
 ### 1. Создайте файл конфигурации Ingress
 
 ```bash
-nano /tmp/woodpecker-ingress.yaml
+# Создайте папку tmp если её нет
+mkdir -p tmp
+
+# Создайте файл конфигурации Ingress
+nano tmp/woodpecker-ingress.yaml
 ```
 
 > 📋 **Пример:** см. файл `woodpecker-ingress.yaml` в этой папке
@@ -135,7 +159,7 @@ nano /tmp/woodpecker-ingress.yaml
 ### 3. Установите Ingress через kubectl
 
 ```bash
-kubectl apply -f /tmp/woodpecker-ingress.yaml -n woodpecker
+kubectl apply -f tmp/woodpecker-ingress.yaml -n woodpecker
 ```
 
 **Вывод:**
