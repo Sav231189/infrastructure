@@ -21,8 +21,9 @@
 # WOODPECKER_HOST: "https://example.com"
 # WOODPECKER_ADMIN: "YOUR_GITHUB_USERNAME"
 
-# Ingress:
-# - Обязательно указать домен: example.com
+# Ingress (настраивается отдельно):
+# - См. файл woodpecker-ingress.yaml
+# - Устанавливается через: kubectl apply -f woodpecker-ingress.yaml
 
 # ------------------------------------------------------------------------------
 # SERVER - Главный компонент Woodpecker
@@ -60,25 +61,10 @@ server:
     - woodpecker-secret # ← Имя Secret с GitHub credentials
 
   # Ingress - маршрутизация HTTP трафика
+  # ⚠️ Ingress вынесен в отдельный файл woodpecker-ingress.yaml
+  # Устанавливается отдельно через kubectl apply (см. helm-install.md)
   ingress:
-    enabled: true
-    ingressClassName: nginx # Используется NGINX Ingress Controller
-
-    hosts:
-      - host: example.com # ← Ваш домен
-        paths:
-          - path: /
-            pathType: Prefix
-
-    # TLS/SSL сертификаты (настраиваются в Nginx Proxy Manager)
-    tls: []
-
-    # Аннотации для Ingress
-    annotations:
-      nginx.ingress.kubernetes.io/ssl-redirect: "false" # SSL настроен в NPM
-      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600" # Таймаут чтения (1 час)
-      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600" # Таймаут отправки (1 час)
-      nginx.ingress.kubernetes.io/proxy-body-size: "100m" # Макс. размер body (для Docker образов)
+    enabled: false
 
   # Создать автоматически секрет для подключения Agent к Server
   createAgentSecret: true

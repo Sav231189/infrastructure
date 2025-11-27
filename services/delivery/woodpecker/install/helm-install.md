@@ -108,23 +108,40 @@ helm upgrade woodpecker \
   --values /tmp/woodpecker-values.yaml
 ```
 
-## Шаг 4: Проверка установки
+---
 
-### Через Lens
+## Шаг 4: Установка Ingress
 
-1. **Helm** → **Releases** → Namespace: `woodpecker` → Статус: **Deployed** ✅
-2. **Workloads** → **Pods** → Все **Running** ✅
-3. **Network** → **Ingresses** → Домен настроен ✅
+> ⚠️ **Важно:** Ingress устанавливается отдельно от Helm chart для гибкости управления
 
-### Через kubectl
+### 1. Создайте файл конфигурации Ingress
 
 ```bash
-# Проверить поды
-kubectl get pods -n woodpecker
+nano /tmp/woodpecker-ingress.yaml
+```
 
-# Проверить логи (если есть проблемы)
-kubectl logs woodpecker-server-0 -n woodpecker --tail=20
-kubectl logs woodpecker-agent-0 -n woodpecker --tail=20
+> 📋 **Пример:** см. файл `woodpecker-ingress.yaml` в этой папке
+
+### 2. Замените домен в конфигурации
+
+Откройте файл и найдите строку:
+
+```yaml
+- host: example.com
+```
+
+Замените `example.com` на ваш реальный домен, например: `woodpecker.stroy-track.ru`
+
+### 3. Установите Ingress через kubectl
+
+```bash
+kubectl apply -f /tmp/woodpecker-ingress.yaml -n woodpecker
+```
+
+**Вывод:**
+
+```
+ingress.networking.k8s.io/woodpecker-ingress created
 ```
 
 ---

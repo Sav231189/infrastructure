@@ -1,0 +1,69 @@
+# ==============================================================================
+# Woodpecker CI - Ingress Configuration
+# ==============================================================================
+# Документация: https://kubernetes.io/docs/concepts/services-networking/ingress/
+#
+# Назначение:
+# - Маршрутизация внешнего HTTP/HTTPS трафика к Woodpecker Server
+# - Настройка таймаутов для длительных операций (сборки, логи)
+# - Настройка лимитов размера body для загрузки Docker образов
+#
+# Установка:
+# kubectl apply -f woodpecker-ingress.yaml -n woodpecker
+#
+# Обновление:
+# kubectl apply -f woodpecker-ingress.yaml -n woodpecker
+#
+# Удаление:
+# kubectl delete -f woodpecker-ingress.yaml -n woodpecker
+# ==============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: woodpecker-ingress
+  namespace: woodpecker
+  annotations:
+    # Отключаем SSL редирект, т.к. SSL настроен в Nginx Proxy Manager
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+
+    # Увеличенные таймауты для длительных операций
+    # Например: просмотр логов сборки в реальном времени
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+    # Максимальный размер тела запроса
+    # Необходимо для загрузки больших Docker образов
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+
+    # Дополнительные настройки (опционально)
+    # nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    # nginx.ingress.kubernetes.io/websocket-services: "woodpecker-server"
+
+spec:
+  # Класс Ingress Controller (NGINX)
+  ingressClassName: nginx
+
+  # Правила маршрутизации
+  rules:
+    # ⚠️ ВАЖНО: Замените на ваш домен!
+    - host: example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Имя сервиса Woodpecker Server
+                # Автоматически создается Helm chart'ом
+                name: woodpecker-server
+                port:
+                  number: 80
+
+  # TLS/SSL сертификаты
+  # В нашем случае SSL настроен в Nginx Proxy Manager, поэтому tls пустой
+  # Если используете cert-manager, раскомментируйте:
+  # tls:
+  #   - hosts:
+  #       - example.com
+  #     secretName: woodpecker-tls-secret
