@@ -245,9 +245,11 @@ nodes:
       - name: /dev/sda4 # ← ID Disk путь (scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part4)
 ```
 
-## ⚙️ Установка через Helm (Lens UI)
+## ⚙️ Установка через Helm (Lens UI rook-ceph-operator и rook-ceph-cluster)
 
-> values-operator.yaml (для rook-ceph)
+- Создать namespace **rook-ceph**
+
+> values-operator.yaml (для rook-ceph-operator)
 
 > values-cluster.yaml (для rook-ceph-cluster)
 
@@ -260,45 +262,71 @@ kubectl -n rook-ceph get secret rook-ceph-dashboard-password -o jsonpath="{['dat
 # Логин по умолчанию: admin
 ```
 
-## Настроить Ingress
+> Если не создался самоподписанный сертификат, то нужно создать вручную:
 
-Создайте Ingress для доступа к Dashboard через браузер:
+```bash
+# Создать самоподписанный сертификат для dashboard
+kubectl exec -n rook-ceph deploy/rook-ceph-tools -- ceph dashboard create-self-signed-cert
 
-> ingress.yaml
+# Перезапустить модуль dashboard
+kubectl exec -n rook-ceph deploy/rook-ceph-tools -- ceph mgr module disable dashboard
+sleep 2
+kubectl exec -n rook-ceph deploy/rook-ceph-tools -- ceph mgr module enable dashboard
 
-```bash (ingress.yaml)
-kubectl apply -f - <<EOF
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: ceph-dashboard
-  namespace: rook-ceph
-  annotations:
-    # Т.к. backend уже использует HTTPS (ssl: true в конфиге), нужно проксировать на HTTPS
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-    # Разрешаем самоподписанный сертификат от Ceph
-    nginx.ingress.kubernetes.io/proxy-ssl-verify: "false"
-    # Включаем SSL редирект
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    # Cert-manager для автоматического Let's Encrypt (если установлен)
-    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
-spec:
-  ingressClassName: nginx
-  rules:
-    - host: ceph.stroy-track.ru
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: rook-ceph-mgr-dashboard
-                port:
-                  number: 8443
-EOF
+# Проверить что dashboard запустился
+sleep 5
+kubectl logs -n rook-ceph -l app=rook-ceph-mgr -c mgr --tail=10 | grep dashboard
 ```
 
-Теперь Dashboard доступен по адресу: `https://ceph.stroy-track.ru` -> ingress https://ip:433
+> Если пользователь admin не создался автоматически (пароль не подходит), создайте его вручную:
+
+```bash
+# Получить пароль из секрета
+DASHBOARD_PASSWORD=$(kubectl -n rook-ceph get secret rook-ceph-dashboard-password -o jsonpath="{['data']['password']}" | base64 --decode)
+echo "Пароль для admin: $DASHBOARD_PASSWORD"
+
+# Создать пользователя admin с этим паролем
+echo "$DASHBOARD_PASSWORD" | kubectl exec -i -n rook-ceph deploy/rook-ceph-tools -- ceph dashboard ac-user-create admin administrator -i -
+
+# Проверить список пользователей
+kubectl exec -n rook-ceph deploy/rook-ceph-tools -- ceph dashboard ac-user-show admin
+```
+
+**Логин:** `admin`  
+**Пароль:** используйте значение из команды выше
+
+## Настройка NodePort для Dashboard
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: rook-ceph-mgr-dashboard-nodeport
+  namespace: rook-ceph
+  labels:
+    app: rook-ceph-mgr
+    rook_cluster: rook-ceph
+spec:
+  type: NodePort
+  ports:
+    - name: https-dashboard
+      port: 8443
+      protocol: TCP
+      targetPort: 8443
+      nodePort: 30443 # Порт на нодах (30000-32767)
+  selector:
+    app: rook-ceph-mgr
+    mgr_role: active
+    rook_cluster: rook-ceph
+```
+
+## Настроить Ingress
+
+> Создайте Ingress для доступа к Dashboard через браузер:
+
+- **ingress.yaml** ./ingress.yaml
+
+Теперь Dashboard (ssl: true) доступен по адресу: `https://ceph.stroy-track.ru` -> ingress https://ip:433
 
 ---
 

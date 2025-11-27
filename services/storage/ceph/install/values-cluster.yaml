@@ -10,7 +10,7 @@ cephClusterSpec:
 
   dashboard:
     enabled: true
-    ssl: true
+    ssl: false # Отключаем SSL - Ingress терминирует HTTPS
 
   mon:
     count: 3

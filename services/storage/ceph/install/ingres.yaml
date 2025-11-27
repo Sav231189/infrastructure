@@ -6,8 +6,12 @@ metadata:
   annotations:
     # Т.к. backend уже использует HTTPS (ssl: true в конфиге), нужно проксировать на HTTPS
     nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    # Backend использует HTTP (ssl: false в values-cluster.yaml)
+    # nginx.ingress.kubernetes.io/backend-protocol: "HTTP"  # По умолчанию HTTP
+
     # Разрешаем самоподписанный сертификат от Ceph
     nginx.ingress.kubernetes.io/proxy-ssl-verify: "false"
+
     # Включаем SSL редирект
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     # Cert-manager для автоматического Let's Encrypt (если установлен)
