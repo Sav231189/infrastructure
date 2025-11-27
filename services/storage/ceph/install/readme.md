@@ -8,22 +8,35 @@
 
 ### Настройка на каждой storage-ноде
 
+> Запросить имя ноды с возможностью использовать значение по умолчанию
+
 ```bash
-# Запросить имя ноды с возможностью использовать значение по умолчанию
 DEFAULT_NODE_NAME=$(hostname)
 read -p "Введите NODE_NAME [по умолчанию: ${DEFAULT_NODE_NAME}]: " NODE_NAME
 NODE_NAME=${NODE_NAME:-$DEFAULT_NODE_NAME}
 echo "NODE_NAME: ${NODE_NAME}"
+```
 
-# 1. Добавить label для идентификации storage-ноды
-kubectl label nodes ${NODE_NAME} role=ceph --overwrite
+> Проверить настройки
 
-# 2. Добавить taint чтобы обычные поды не запускались на storage-нодах
-# kubectl taint nodes ${NODE_NAME} workload=storage:NoSchedule --overwrite
-
-# 3. Проверить настройки
+```bash
+# Проверить настройки
 kubectl get node ${NODE_NAME} --show-labels
 kubectl describe node ${NODE_NAME} | grep -A5 Taints
+```
+
+> Добавить label для идентификации storage-ноды
+
+```bash
+# Добавить label для идентификации storage-ноды
+kubectl label nodes ${NODE_NAME} role=ceph --overwrite
+```
+
+> Добавить taint чтобы обычные поды не запускались на storage-нодах
+
+```bash
+# Добавить taint чтобы обычные поды не запускались на storage-нодах
+kubectl taint nodes ${NODE_NAME} workload=storage:NoSchedule --overwrite
 ```
 
 **Ожидаемый результат:**
@@ -236,9 +249,7 @@ nodes:
 
 > values-operator.yaml (для rook-ceph)
 
-
 > values-cluster.yaml (для rook-ceph-cluster)
-
 
 > 🌐 Dashboard - получить пароль
 
