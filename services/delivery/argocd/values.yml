@@ -1,0 +1,513 @@
+# ==============================================================================
+# Argo CD - Production Configuration
+# ==============================================================================
+# Документация: https://argo-cd.readthedocs.io
+#
+# Argo CD - инструмент GitOps для автоматического развертывания приложений
+# из Git репозиториев в Kubernetes кластеры
+#
+# Архитектура:
+# - Server (Deployment) - веб-интерфейс, API, gRPC сервер
+# - Repo Server (Deployment) - клонирование Git репозиториев, рендеринг манифестов
+# - Application Controller (StatefulSet/Deployment) - синхронизация приложений с Git
+# - Dex (Deployment) - SSO сервер для интеграции с OIDC провайдерами
+# - Redis (Deployment) - кэш и хранилище сессий
+# - ApplicationSet Controller (Deployment) - автоматическое создание приложений из шаблонов
+# - Notifications Controller (Deployment) - отправка уведомлений (Slack, Email, Webhook)
+# - Commit Server (Deployment) - отслеживание коммитов в Git (webhook'и)
+#
+# Безопасность:
+# ⚠️ ВАЖНО: оставьте argocdServerAdminPassword пустым - Argo CD создаст пароль автоматически
+# - Секреты для Git репозиториев хранятся в Kubernetes Secrets
+# - Секреты для уведомлений хранятся в Secret 'argocd-notifications-secret'
+# - НЕ указывайте секреты напрямую в этом файле!
+#
+# Приоритет переменных окружения в Kubernetes:
+# 1. Переменные из секции 'env' (высший приоритет) ← перебивают всё!
+# 2. Переменные из 'envFrom' (секреты, ConfigMaps) ← используются если не определены в env
+#
+# StorageClass (опционально):
+# - По умолчанию используется emptyDir (временное хранилище)
+# - Для production с большими репозиториями можно использовать Ceph RBD
+# - Настройки для Redis и Repo Server закомментированы в соответствующих секциях
+# ==============================================================================
+
+# ============================================
+# ОСНОВНЫЕ НАСТРОЙКИ
+# ============================================
+nameOverride: argocd
+fullnameOverride: ""
+
+# Создавать ClusterRole для управления приложениями в том же кластере
+createClusterRoles: true
+
+# Установка и сохранение CRD (Custom Resource Definitions)
+crds:
+  install: true
+  keep: true
+
+# ============================================
+# ГЛОБАЛЬНЫЕ НАСТРОЙКИ
+# ============================================
+global:
+  # Домен для Argo CD (опционально, можно настроить позже)
+  # Используется для Ingress, сертификатов, SSO, уведомлений
+  # Если не указан, можно настроить через Ingress отдельно
+  domain: ""
+
+  # Образы Argo CD
+  image:
+    repository: quay.io/argoproj/argocd
+    tag: "" # Используется версия из chart
+    imagePullPolicy: IfNotPresent
+
+  # Логирование
+  logging:
+    format: text # text или json
+    level: info # debug, info, warn, error
+
+  # История развертываний (сколько старых версий хранить)
+  revisionHistoryLimit: 3
+
+  # Селектор нод (запускать только на Linux)
+  nodeSelector:
+    kubernetes.io/os: linux
+
+  # Распределение подов по нодам (мягкая анти-аффинити)
+  affinity:
+    podAntiAffinity: soft
+
+# ============================================
+# КОНФИГУРАЦИЯ ARGO CD
+# ============================================
+configs:
+  # Основной ConfigMap (argocd-cm)
+  cm:
+    create: true
+
+    # Метка для отслеживания ресурсов Argo CD
+    application.instanceLabelKey: argocd.argoproj.io/instance
+
+    # Локальный admin пользователь (можно отключить после настройки SSO)
+    admin.enabled: true
+
+    # Таймауты синхронизации
+    timeout.reconciliation: 180s # Как часто проверять Git на изменения
+    timeout.hard.reconciliation: 0s # Жесткий таймаут (0 = без ограничений)
+
+    # Исключение ресурсов из отслеживания (для производительности)
+    # Исключаем служебные ресурсы Kubernetes, которые создаются автоматически
+    resource.exclusions: |
+      - apiGroups: ['']
+        kinds: [Endpoints, EndpointSlice]
+      - apiGroups: ['discovery.k8s.io']
+        kinds: [EndpointSlice]
+      - apiGroups: ['coordination.k8s.io']
+        kinds: [Lease]
+      - apiGroups: ['authentication.k8s.io', 'authorization.k8s.io']
+        kinds: [SelfSubjectReview, TokenReview, LocalSubjectAccessReview, SelfSubjectAccessReview, SelfSubjectRulesReview, SubjectAccessReview]
+      - apiGroups: ['certificates.k8s.io']
+        kinds: [CertificateSigningRequest]
+      - apiGroups: ['cert-manager.io']
+        kinds: [CertificateRequest]
+      - apiGroups: ['cilium.io']
+        kinds: [CiliumIdentity, CiliumEndpoint, CiliumEndpointSlice]
+
+    # Игнорирование обновлений статусов (чтобы не было лишних синхронизаций)
+    resource.customizations.ignoreResourceUpdates.all: |
+      jsonPointers:
+        - /status
+
+  # Параметры командной строки (argocd-cmd-params-cm)
+  params:
+    create: true
+
+  # RBAC политики (argocd-rbac-cm)
+  rbac:
+    create: true
+    # Политики по умолчанию (пусто = только admin)
+    policy.default: ""
+    # Файл с политиками (можно задать через policy.csv)
+    policy.csv: ""
+    # Области OIDC для проверки прав
+    scopes: "[groups]"
+    # Режим сопоставления: glob или regex
+    policy.matchMode: "glob"
+
+  # SSH известные хосты для Git репозиториев
+  ssh:
+    create: true
+    # Известные хосты по умолчанию (GitHub, GitLab, Bitbucket)
+    knownHosts: |
+      [ssh.github.com]:443 ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+      [ssh.github.com]:443 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+      github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+      gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf
+      bitbucket.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIazEu89wgQZ4bqs3d63QSMzYVa0MuJ2e2gKTKqu+UUO
+
+  # TLS сертификаты для Git репозиториев
+  tls:
+    create: true
+    certificates: {}
+
+  # Секреты Argo CD
+  secret:
+    createSecret: true
+    # Пароль admin (оставьте пустым - Argo CD создаст автоматически)
+    # Если нужно задать свой: htpasswd -nbBC 10 "" ваш_пароль | tr -d ':\n' | sed 's/$2y/$2a/'
+    argocdServerAdminPassword: ""
+    # Секреты для webhook'ов (GitHub, GitLab, Bitbucket) - опционально
+    githubSecret: ""
+    gitlabSecret: ""
+    bitbucketServerSecret: ""
+
+  # Git репозитории (создаются как Secrets)
+  repositories: {}
+  # Пример:
+  # my-repo:
+  #   url: https://github.com/your-org/your-repo
+  #   type: git
+
+  # Учетные данные для репозиториев (шаблоны)
+  credentialTemplates: {}
+
+# ============================================
+# APPLICATION CONTROLLER
+# ============================================
+## Отвечает за синхронизацию приложений с Git
+controller:
+  name: application-controller
+  replicas: 1 # Для HA увеличьте до 2-3
+
+  # Ресурсы для контроллера
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  # Метрики Prometheus (опционально, можно настроить позже)
+  metrics:
+    enabled: true
+    service:
+      type: ClusterIP
+      servicePort: 8082
+    serviceMonitor:
+      enabled: false # Включить после установки Prometheus
+      interval: 30s
+      namespace: "monitoring" # Namespace вашего Prometheus
+
+# ============================================
+# DEX (SSO сервер)
+# ============================================
+## Сервер аутентификации для интеграции с OIDC провайдерами
+dex:
+  enabled: true
+  name: dex-server
+
+  # Образ Dex
+  image:
+    repository: ghcr.io/dexidp/dex
+    tag: v2.44.0
+
+  # Ресурсы для Dex
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  # Метрики (опционально)
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false # Включить после установки Prometheus
+      namespace: "monitoring"
+
+# ============================================
+# REDIS
+# ============================================
+## Кэш и хранилище сессий
+redis:
+  enabled: true
+  name: redis
+
+  # Образ Redis
+  image:
+    repository: ecr-public.aws.com/docker/library/redis
+    tag: 8.2.2-alpine
+
+    # Ресурсы для Redis
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+  # Persistent storage для Redis (опционально)
+  # По умолчанию используется emptyDir (временное хранилище)
+  #
+  # ⚠️ ВАЖНО:
+  # - PV создавать НЕ нужно! StorageClass создаст его автоматически
+  # - PVC будет в статусе "Pending" с событием "WaitForFirstConsumer" - это НОРМАЛЬНО!
+  #   StorageClass с volumeBindingMode: WaitForFirstConsumer создаст PV только когда под попытается использовать PVC
+  # - Для Redis (1 реплика) ReadWriteOnce (RWO) подходит идеально
+  #
+  # Шаг 1: Создайте PVC через kubectl:
+  #   kubectl create -f - <<EOF
+  #   apiVersion: v1
+  #   kind: PersistentVolumeClaim
+  #   metadata:
+  #     name: argocd-redis-data
+  #     namespace: argocd
+  #   spec:
+  #     storageClassName: ceph-rbd  # ← Ваш StorageClass (ceph-rbd, longhorn и т.д.)
+  #     accessModes:
+  #       - ReadWriteOnce  # ← Для Redis (1 реплика) RWO подходит
+  #     resources:
+  #       requests:
+  #         storage: 5Gi  # ← Размер хранилища
+  #   EOF
+  #
+  # Шаг 2: Проверьте статус PVC (может быть Pending - это нормально):
+  #   kubectl get pvc -n argocd argocd-redis-data
+  #   # Статус будет Bound только после того, как под попытается его использовать
+  #   # Событие "WaitForFirstConsumer" означает, что PVC ждет первого пода
+  #
+  # Шаг 3: Раскомментируйте секции ниже и обновите Helm release:
+  # volumes:
+  #   - name: redis-data
+  #     persistentVolumeClaim:
+  #       claimName: argocd-redis-data
+  # volumeMounts:
+  #   - name: redis-data
+  #     mountPath: /data
+
+  # Метрики (через redis-exporter)
+  exporter:
+    enabled: true
+    image:
+      repository: ghcr.io/oliver006/redis_exporter
+      tag: v1.80.1
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false # Включить после установки Prometheus
+      namespace: "monitoring"
+
+# ============================================
+# SERVER (Web UI + API)
+# ============================================
+## Веб-интерфейс и API сервер Argo CD
+server:
+  name: server
+  replicas: 2 # Для HA минимум 2 реплики
+
+  # Ресурсы для сервера
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Автомасштабирование (HPA)
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  # Ingress для доступа к UI (отключен - устанавливается отдельно)
+  ingress:
+    enabled: false
+
+  # Метрики (опционально)
+  metrics:
+    enabled: true
+    service:
+      type: ClusterIP
+      servicePort: 8083
+    serviceMonitor:
+      enabled: false # Включить после установки Prometheus
+      interval: 30s
+      namespace: "monitoring"
+
+# ============================================
+# REPO SERVER
+# ============================================
+## Сервер для работы с Git репозиториями (клонирование, рендеринг манифестов)
+repoServer:
+  name: repo-server
+  replicas: 2 # Для HA минимум 2 реплики
+
+  # Ресурсы для repo server
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+  # Автомасштабирование
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  # Persistent storage для кэша Helm (опционально)
+  # По умолчанию используется emptyDir (временное хранилище)
+  # Полезно для больших репозиториев - кэш сохраняется между перезапусками
+  #
+  # ⚠️ КРИТИЧЕСКИ ВАЖНО:
+  # - PV создавать НЕ нужно! StorageClass создаст его автоматически
+  # - Для нескольких реплик (replicas: 2+) НЕ используйте PVC с ReadWriteOnce (RWO)!
+  #   Это вызовет ошибку "Multi-Attach error" - один том нельзя монтировать на несколько подов одновременно
+  #
+  # Решения для repo-server с несколькими репликами:
+  # 1. ✅ Использовать emptyDir (по умолчанию) - кэш теряется при перезапуске, но работает с несколькими репликами
+  # 2. Использовать ReadWriteMany (RWX) - если ваш StorageClass поддерживает (CephFS, NFS)
+  # 3. Уменьшить replicas до 1 - тогда можно использовать ReadWriteOnce
+  #
+  # Если всё же нужен persistent storage для кэша с несколькими репликами:
+  # Шаг 1: Создайте PVC с ReadWriteMany (если StorageClass поддерживает):
+  #   kubectl create -f - <<EOF
+  #   apiVersion: v1
+  #   kind: PersistentVolumeClaim
+  #   metadata:
+  #     name: argocd-repo-server-helm-cache
+  #     namespace: argocd
+  #   spec:
+  #     storageClassName: cephfs  # ← Должен поддерживать RWX (НЕ ceph-rbd!)
+  #     accessModes:
+  #       - ReadWriteMany  # ← ВАЖНО: RWX для нескольких реплик!
+  #     resources:
+  #       requests:
+  #         storage: 10Gi
+  #   EOF
+  #
+  # Шаг 2: Проверьте, что PVC создан и привязан:
+  #   kubectl get pvc -n argocd argocd-repo-server-helm-cache
+  #   # Должен быть статус: Bound
+  #
+  # Шаг 3: Раскомментируйте секции ниже и обновите Helm release:
+  # volumes:
+  #   - name: helm-cache
+  #     persistentVolumeClaim:
+  #       claimName: argocd-repo-server-helm-cache
+  # volumeMounts:
+  #   - name: helm-cache
+  #     mountPath: /helm-cache
+
+  # Метрики (опционально)
+  metrics:
+    enabled: true
+    service:
+      type: ClusterIP
+      servicePort: 8084
+    serviceMonitor:
+      enabled: false # Включить после установки Prometheus
+      namespace: "monitoring"
+
+# ============================================
+# APPLICATIONSET CONTROLLER
+# ============================================
+## Контроллер для автоматического создания приложений из шаблонов
+applicationSet:
+  name: applicationset-controller
+  replicas: 1
+
+  # Ресурсы
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Метрики (опционально)
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false # Включить после установки Prometheus
+      namespace: "monitoring"
+
+# ============================================
+# NOTIFICATIONS CONTROLLER
+# ============================================
+## Контроллер для отправки уведомлений (Slack, Email, Webhook)
+notifications:
+  enabled: true
+  name: notifications-controller
+
+  # URL Argo CD для уведомлений
+  argocdUrl: "" # По умолчанию: https://{global.domain}
+
+  # Ресурсы
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Секреты для уведомлений (настроить позже при необходимости)
+  secret:
+    create: true
+    name: "argocd-notifications-secret"
+    items: {}
+    # Пример для Slack:
+    # items:
+    #   slack-token: "xoxb-your-slack-token"
+
+  # Конфигурация уведомлений (настроить позже)
+  notifiers: {}
+  # Пример:
+  # notifiers:
+  #   service.slack: |
+  #     token: $slack-token
+
+  # Метрики (опционально)
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false # Включить после установки Prometheus
+      namespace: "monitoring"
+
+# ============================================
+# COMMIT SERVER
+# ============================================
+## Сервер для отслеживания коммитов в Git (улучшает реакцию на изменения)
+commitServer:
+  enabled: true
+  name: commit-server
+
+  # Ресурсы
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Метрики (опционально)
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: false # Включить после установки Prometheus
+      namespace: "monitoring"

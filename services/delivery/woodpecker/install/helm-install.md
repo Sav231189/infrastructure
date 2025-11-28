@@ -1,4 +1,4 @@
-# Woodpecker CI (Kubernetes / Helm)
+Woodpecker CI (Kubernetes / Helm)
 
 ## Что это?
 
@@ -17,7 +17,7 @@
 
 ---
 
-## Шаг 1: Создать GitHub OAuth App
+## Шаг 1.1: Создать GitHub OAuth App
 
 1. Откройте https://github.com/settings/developers
 2. **New OAuth App**
@@ -37,6 +37,23 @@
 
 ---
 
+## Шаг 1.2: Создать Forgejo OAuth App
+
+1. Откройте `https://forgejo.<host>/user/settings/applications`
+2. **Create a new OAuth Application**
+3. Заполните:
+   - **Application name:** `Woodpecker CI` (или любое)
+   - **Redirect URI:** `https://woodpecker.stroy-track.ru/authorize` ⚠️ **ВАЖНО!**
+4. **Create Application**
+5. Скопируйте **Client ID** и **Client Secret**
+
+> ⚠️ **КРИТИЧНО:**
+>
+> - Redirect URI должен совпадать с `WOODPECKER_HOST/authorize`!
+> - Если Woodpecker и Forgejo на одном хосте, настройте webhook в Forgejo (см. ниже)
+
+---
+
 ## Шаг 2: Создать namespace и Secret
 
 ### 1. Создайте namespace
@@ -45,7 +62,7 @@
 kubectl create namespace woodpecker
 ```
 
-### 2. Создайте Secret с GitHub данными
+### 2. Создайте Secret с Git данными
 
 > 💡 **Важно: Приоритет переменных окружения**
 >
@@ -67,7 +84,7 @@ kubectl create namespace woodpecker
 >
 > Теперь переменные будут браться **ТОЛЬКО из Secret** через `extraSecretNamesForEnvFrom`! ✅
 
-**Через kubectl**
+**Создать Secret для подключения к GitHub**
 
 ```bash
 kubectl create secret generic woodpecker-secret \
@@ -76,6 +93,19 @@ kubectl create secret generic woodpecker-secret \
   --from-literal=WOODPECKER_GITHUB_SECRET='YOUR_CLIENT_SECRET' \
   --from-literal=WOODPECKER_HOST='https://example.com' \
   --from-literal=WOODPECKER_ADMIN='YOUR_GITHUB_USERNAME' \
+  --namespace woodpecker
+```
+
+**Создать Secret для подключения к Forgejo**
+
+```bash
+kubectl create secret generic woodpecker-secret \
+  --from-literal=WOODPECKER_FORGEJO='true' \
+  --from-literal=WOODPECKER_FORGEJO_URL='https://forgejo.example.com' \
+  --from-literal=WOODPECKER_FORGEJO_CLIENT='YOUR_CLIENT_ID' \
+  --from-literal=WOODPECKER_FORGEJO_SECRET='YOUR_CLIENT_SECRET' \
+  --from-literal=WOODPECKER_HOST='https://woodpecker.example.com' \
+  --from-literal=WOODPECKER_ADMIN='YOUR_FORGEJO_USERNAME' \
   --namespace woodpecker
 ```
 
@@ -98,6 +128,8 @@ stringData:
   WOODPECKER_ADMIN: "YOUR_GITHUB_USERNAME"
 ```
 
+## Шаг 3: Установите Woodpecker
+
 ### 1. Создайте конфигурацию на сервере с kubectl
 
 ```bash
@@ -110,7 +142,7 @@ nano tmp/woodpecker-values.yaml
 
 > 📋 **Пример:** см. файл `woodpecker-values.yaml` в этой папке
 
-### 2. Установите Woodpecker
+### 2. Установите через Helm
 
 ```bash
 helm install woodpecker \
@@ -188,7 +220,7 @@ ingress.networking.k8s.io/woodpecker-ingress created
 ## Шаг 6: Первый вход
 
 1. Откройте `https://example.com`
-2. **Login with GitHub**
+2. **Login with GitHub** (или **Login with Forgejo**, если настроен Forgejo)
 3. **Authorize**
 4. Готово! 🎉
 

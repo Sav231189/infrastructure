@@ -1,0 +1,227 @@
+# ==============================================================================
+# Forgejo - Git Hosting Service Configuration
+# ==============================================================================
+# Документация: https://forgejo.org/docs/
+#
+# Архитектура:
+# - Forgejo (StatefulSet) - веб-интерфейс, Git сервер, API
+# - PostgreSQL (Bitnami subchart) - база данных для метаданных
+# - Redis (Bitnami subchart) - кеш, сессии, очереди задач
+#
+# Доступ:
+# - HTTP/HTTPS: через Ingress (веб-интерфейс, API) - см. ingres.yaml
+# - SSH: через TCP Ingress (безопаснее NodePort) - см. forgejo-ssh-tcp-configmap.yaml
+#   SSH доступен на стандартном порту 22 через nginx-ingress + ConfigMap
+#   Можно использовать: ssh://git.stroy-track.ru/ (без указания порта)
+#   Для работы с Git через SSH ключи, как в GitHub
+#
+# Безопасность:
+# ⚠️ ОБЯЗАТЕЛЬНО СМЕНИТЕ ПЕРЕД ДЕПЛОЕМ:
+#    - gitea.admin.username (строка 108)
+#    - gitea.admin.password (строка 109)
+#    - gitea.admin.email (строка 110) - не обязателен для создания админа,
+#      но нужен для получения уведомлений по email
+#
+# ⚠️ ОБЯЗАТЕЛЬНО ИЗМЕНИТЕ ПОД СВОЙ ДОМЕН:
+#    - gitea.config.server.ROOT_URL (строка 122)
+#    - gitea.config.server.DOMAIN (строка 123)
+#    - gitea.config.server.SSH_DOMAIN (строка 124)
+#    - gitea.config.server.SSH_PORT (строка 195) - порт SSH для внешнего доступа
+#      (при использовании TCP Ingress на порту 22 - можно использовать ssh:// без указания порта)
+#
+# Примечание: Для production рекомендуется вынести username/password в Kubernetes Secret
+# и использовать externalSecret или envFrom для подключения секретов.
+# ==============================================================================
+
+# --- Общие параметры Forgejo ---
+replicaCount: 1
+
+image:
+  rootless: true
+
+# PVC ReadWriteOnce → безопаснее Recreate, чтобы не было двух pod'ов
+strategy:
+  type: Recreate
+
+# Ресурсы самого Forgejo (web + git)
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1
+    memory: 2Gi
+
+# --- Сервисный уровень ---
+service:
+  # HTTP сервис (веб-интерфейс) - доступ через Ingress
+  http:
+    type: ClusterIP
+    port: 3000
+
+  # SSH сервис - для работы с Git через SSH ключи (как в GitHub)
+  # Используется разработчиками для: git clone, git push, git pull через SSH
+  # ⚠️ ВАЖНО: SSH проксируется через TCP Ingress (см. forgejo-ssh-tcp-configmap.yaml)
+  # Это безопаснее, чем NodePort, так как не открывает порты напрямую на нодах
+  ssh:
+    type: ClusterIP # Внутренний сервис, доступ через TCP Ingress
+    port: 22
+
+# --- Ingress внутри чарта отключаем, ты его делаешь отдельным файлом ---
+ingress:
+  enabled: false
+
+# HTTPRoute (Gateway API) - альтернативный способ маршрутизации трафика через Gateway API вместо Ingress
+# Отключаем, так как используем отдельный Ingress файл
+httpRoute:
+  enabled: false
+
+# Route (OpenShift) - механизм маршрутизации для кластеров OpenShift
+# Отключаем, так как используем стандартный Ingress и отдельный Ingress файл
+route:
+  enabled: false
+
+# --- Персистентные данные Forgejo (репозитории, вложения и т.п.) ---
+persistence:
+  enabled: true
+  create: true
+  mount: true
+  size: 20Gi # под себя подстрой
+  accessModes:
+    - ReadWriteOnce
+  storageClass: ceph-rbd
+
+# Подпись релизов пока не нужна, выключаем
+signing:
+  enabled: false
+
+# --- Встроенные PostgreSQL и Redis (простая прод-конфигурация) ---
+
+# Отключаем тяжёлые HA-подчарты
+postgresql-ha:
+  enabled: false
+
+redis-cluster:
+  enabled: false
+
+# Включаем одиночный PostgreSQL (Bitnami subchart)
+postgresql:
+  enabled: true
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi # объём под PostgreSQL
+      storageClass: ceph-rbd
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 2Gi
+
+# Включаем одиночный Redis (для сессий/кэша/очередей)
+redis:
+  enabled: true
+  architecture: standalone
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi # этого на долго хватит
+      storageClass: ceph-rbd
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  replica:
+    replicaCount: 0 # без реплик пока достаточно
+
+# ==============================================================================
+# НАСТРОЙКИ FORGEJO (секция gitea.* у чарта, но это Forgejo)
+# ==============================================================================
+
+gitea:
+  # ------------------------------------------------------------------------------
+  # ⚠️ СОЗДАНИЕ ПЕРВОГО АДМИНА - ОБЯЗАТЕЛЬНО ИЗМЕНИТЕ!
+  # ------------------------------------------------------------------------------
+  admin:
+    # ⚠️ ИЗМЕНИТЕ: Имя пользователя администратора
+    username: "forgejo-admin"
+
+    # ⚠️ КРИТИЧНО: Пароль администратора - ОБЯЗАТЕЛЬНО СМЕНИТЕ НА СИЛЬНЫЙ!
+    # Рекомендуется: минимум 16 символов, буквы, цифры, спецсимволы
+    # Для production: вынесите в Kubernetes Secret и используйте externalSecret
+    password: "CHANGE_ME_STRONG"
+
+    # ℹ️ Email администратора (не обязателен для создания админа, но нужен для уведомлений)
+    # Если не указать - админ создастся, но email-уведомления работать не будут
+    # Для production: можно вынести в Kubernetes Secret
+    email: "git-admin@stroy-track.ru"
+
+    # Требуем смену пароля при первом входе (рекомендуется для безопасности)
+    passwordMode: initialOnlyRequireReset
+
+  metrics:
+    enabled: false # если потом захочешь – включим и повесим на Prometheus
+
+  config:
+    APP_NAME: "StroyTrack Git"
+    RUN_MODE: "prod"
+
+    # ------------------------------------------------------------------------------
+    # ⚠️ НАСТРОЙКИ СЕРВЕРА - ОБЯЗАТЕЛЬНО ИЗМЕНИТЕ ПОД СВОЙ ДОМЕН!
+    # ------------------------------------------------------------------------------
+    server:
+      # ⚠️ ИЗМЕНИТЕ: Полный URL вашего Forgejo (с протоколом и слэшем в конце)
+      # Используется для генерации ссылок в уведомлениях, webhooks и т.д.
+      ROOT_URL: "https://git.stroy-track.ru/"
+
+      # ⚠️ ИЗМЕНИТЕ: Домен для веб-интерфейса (без протокола)
+      # Должен совпадать с доменом в ROOT_URL
+      DOMAIN: "git.stroy-track.ru"
+
+      # ⚠️ ИЗМЕНИТЕ: Домен для SSH доступа к репозиториям
+      # Обычно совпадает с DOMAIN, но может быть другим если SSH на отдельном домене
+      SSH_DOMAIN: "git.stroy-track.ru"
+
+      # ⚠️ Порт SSH для внешнего доступа
+      # При использовании TCP Ingress (рекомендуется) - укажите порт из ConfigMap
+      # В forgejo-ssh-tcp-configmap.yaml указан стандартный порт 22
+      # Использование порта 22 позволяет работать без указания порта: ssh://git.stroy-track.ru/
+      # Если измените порт в ConfigMap - измените и здесь
+      # Примеры:
+      #   - TCP Ingress на стандартном порту 22 → SSH_PORT: 22 (можно без указания порта)
+      #   - TCP Ingress на порту 2222 → SSH_PORT: 2222 (нужно указывать :2222)
+      SSH_PORT: 22
+
+    log:
+      LEVEL: Info
+
+    database:
+      DB_TYPE: "postgres" # Чарт сам пробросит хост/порт/логин из PostgreSQL subchart
+
+    service:
+      DISABLE_REGISTRATION: true # Регистрация только через админа
+      REQUIRE_SIGNIN_VIEW: true # Без логина ничего не видно
+      DEFAULT_ALLOW_CREATE_ORGANIZATION: true
+      DEFAULT_ORG_VISIBILITY: private
+      DEFAULT_ORG_MEMBER_VISIBLE: false
+      SHOW_REGISTRATION_BUTTON: false
+
+    repository:
+      DEFAULT_PRIVATE: private
+      DEFAULT_BRANCH: main
+
+    actions:
+      ENABLED: true
+
+    # При желании – включишь email, пакеты и т.д. позже
+    # mailer:
+    #   ENABLED: true
+    #   SMTP_ADDR: smtp.example.com
+    #   SMTP_PORT: "587"
+    #   FROM: "git@stroy-track.ru"
+    #   USER: "git@stroy-track.ru"

@@ -1,0 +1,165 @@
+# ==============================================================================
+# Forgejo - SSH TCP Ingress Configuration
+# ==============================================================================
+# Документация: https://kubernetes.github.io/ingress-nginx/user-guide/exposing-tcp-udp-services/
+#
+# Назначение:
+# - TCP проксирование SSH трафика через nginx-ingress
+# - Позволяет использовать SSH без открытия NodePort на нодах
+# - Безопаснее, чем NodePort, так как трафик идет через Ingress контроллер
+#
+# ==============================================================================
+# КАК ЭТО РАБОТАЕТ (механизм работы)
+# ==============================================================================
+# 1. nginx-ingress controller постоянно "следит" (watch) за ConfigMap'ами
+#    с именем "tcp-services" и "udp-services" в своем namespace
+#
+# 2. Controller ищет ConfigMap по:
+#    - Имени: "tcp-services" (для TCP) или "udp-services" (для UDP)
+#    - Namespace: где установлен controller (обычно ingress-nginx)
+#    - Labels: app.kubernetes.io/name: ingress-nginx (опционально, но рекомендуется)
+#
+# 3. Когда ConfigMap изменяется, controller:
+#    - Читает все ключи из секции "data"
+#    - Каждый ключ = внешний порт (например, "22", "3306", "5432")
+#    - Каждое значение = namespace/сервис:внутренний-порт (например, "git/forgejo-ssh:22")
+#    - Генерирует конфигурацию nginx для TCP/UDP проксирования
+#    - Перезагружает nginx внутри контроллера
+#
+# 4. nginx внутри контроллера начинает слушать указанные порты и проксировать
+#    трафик на соответствующие сервисы в кластере
+#
+# ==============================================================================
+# ЧТО ЕЩЕ МОЖЕТ ДЕЛАТЬ TCP/UDP ConfigMap
+# ==============================================================================
+# 1. Несколько портов в одном ConfigMap:
+#    data:
+#      "22": "git/forgejo-ssh:22"      # SSH для Forgejo
+#      "3306": "mysql/mysql:3306"       # MySQL
+#      "5432": "postgres/postgres:5432" # PostgreSQL
+#      "6379": "redis/redis:6379"       # Redis
+#
+# 2. UDP протокол (отдельный ConfigMap "udp-services"):
+#    apiVersion: v1
+#    kind: ConfigMap
+#    metadata:
+#      name: udp-services
+#      namespace: ingress-nginx
+#    data:
+#      "53": "kube-system/kube-dns:53"  # DNS (UDP)
+#      "1194": "vpn/openvpn:1194"       # OpenVPN
+#
+# 3. Разные сервисы на разных портах:
+#    data:
+#      "2222": "git/forgejo-ssh:22"     # Forgejo SSH на порту 2222
+#      "2223": "git/gitea-ssh:22"        # Gitea SSH на порту 2223
+#      "3000": "apps/myapp:8080"         # Любое приложение
+#
+# 4. Объединение с существующим ConfigMap:
+#    Если ConfigMap уже существует (например, для другого сервиса),
+#    нужно добавить порт через patch, а не перезаписывать весь ConfigMap:
+#    kubectl patch configmap tcp-services -n ingress-nginx \
+#      --type merge -p '{"data":{"22":"git/forgejo-ssh:22"}}'
+#
+# 5. Удаление порта из ConfigMap:
+#    kubectl patch configmap tcp-services -n ingress-nginx \
+#      --type json -p '[{"op": "remove", "path": "/data/22"}]'
+#
+# ==============================================================================
+#
+# ⚠️ ВАЖНО:
+# 1. Этот ConfigMap должен быть в namespace, где установлен nginx-ingress controller
+#    (обычно ingress-nginx, kube-system или default)
+
+# 5. SSH будет доступен на стандартном порту 22 (можно использовать ssh://git.stroy-track.ru/ без указания порта)
+#
+# 6. ⚠️ КОНФЛИКТ С СИСТЕМНЫМ SSH: Порт 22 может конфликтовать с системным SSH на нодах
+#    Если nginx-ingress работает через NodePort - используйте другой порт (например, 2222)
+#    Если используется LoadBalancer или внешний балансировщик - порт 22 безопасен
+#
+# 7. Убедитесь, что порт 22 открыт в firewall и настроен в Nginx Proxy Manager
+#
+# 8. Убедитесь, что nginx-ingress controller поддерживает TCP (обычно включено по умолчанию)
+#
+# ==============================================================================
+# УСТАНОВКА (после определения namespace)
+# ==============================================================================
+#
+# Шаг 1: Найти namespace nginx-ingress controller
+# NAMESPACE=$(kubectl get pods -A | grep ingress-nginx-controller | awk '{print $1}' | head -1)
+# echo "Найден namespace: $NAMESPACE"
+#
+# Шаг 2: Применить ConfigMap
+# kubectl apply -f forgejo-ssh-tcp-configmap.yaml -n $NAMESPACE
+#
+# Шаг 3: Перезапустить controller
+# kubectl rollout restart deployment ingress-nginx-controller -n $NAMESPACE
+#
+# Шаг 4: Проверить
+# kubectl get configmap tcp-services -n $NAMESPACE -o yaml
+# ==============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tcp-services # ⚠️ ИМЯ ДОЛЖНО БЫТЬ ИМЕННО "tcp-services" (для UDP - "udp-services")
+  # ⚠️ ВАЖНО: namespace должен быть тем же, где установлен nginx-ingress controller!
+  # Найти namespace: kubectl get pods -A | grep ingress-nginx-controller
+  # В вашем случае (RKE2): kube-system
+  # Обычно это: ingress-nginx, kube-system или default
+  namespace: kube-system # ⚠️ Для RKE2 это kube-system, для других установок может быть ingress-nginx
+  labels:
+    # Labels помогают controller'у найти ConfigMap (опционально, но рекомендуется)
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/part-of: ingress-nginx
+data:
+  # ==================================================================================
+  # ФОРМАТ ДАННЫХ: "внешний-порт: namespace/имя-сервиса:внутренний-порт"
+  # ==================================================================================
+  #
+  # Ключ (например, "22"):
+  #   - Внешний порт, на котором nginx-ingress будет слушать входящие соединения
+  #   - Может быть любым свободным портом (22, 2222, 3306, 5432 и т.д.)
+  #   - Должен быть строкой в кавычках (YAML требует кавычки для ключей-чисел)
+  #
+  # Значение (например, "git/forgejo-ssh:22"):
+  #   - Формат: "namespace/имя-сервиса:порт"
+  #   - namespace: где находится сервис (например, "git", "default", "apps")
+  #   - имя-сервиса: имя Kubernetes Service (например, "forgejo-ssh")
+  #   - порт: порт сервиса, на который проксировать (например, "22")
+  #
+  # ==================================================================================
+  # ПРИМЕРЫ ИСПОЛЬЗОВАНИЯ
+  # ==================================================================================
+  #
+  # Один сервис:
+  #   "22": "git/forgejo-ssh:22"
+  #
+  # Несколько сервисов в одном ConfigMap:
+  #   "22": "git/forgejo-ssh:22"
+  #   "3306": "mysql/mysql-service:3306"
+  #   "5432": "postgres/postgres-service:5432"
+  #
+  # Разные порты для одного сервиса:
+  #   "2222": "git/forgejo-ssh:22"  # SSH на порту 2222
+  #   "2223": "git/gitea-ssh:22"     # Другой Git сервер на порту 2223
+  #
+  # ==================================================================================
+  # НАСТРОЙКИ ДЛЯ FORGEJO
+  # ==================================================================================
+  #
+  # Порт 22 - стандартный порт SSH (можно использовать без указания порта)
+  # Использование: ssh://git.stroy-track.ru/ или git@git.stroy-track.ru
+  #
+  # ⚠️ ВАЖНО:
+  # - Порт 22 - это внешний порт, на котором будет доступен SSH
+  # - git/forgejo-ssh:22 - это namespace/имя-сервиса:внутренний-порт
+  # - Имя сервиса обычно: <release-name>-ssh (например, forgejo-ssh)
+  #
+  # ⚠️ КОНФЛИКТ: Если nginx-ingress использует NodePort, порт 22 может конфликтовать
+  # с системным SSH на нодах. В этом случае используйте другой порт (например, 2222)
+  #
+  # Проверить имя сервиса:
+  # kubectl get svc -n git | grep ssh
+  #
+  "22": "git/forgejo-ssh:22"

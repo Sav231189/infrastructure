@@ -25,11 +25,21 @@
 
 # Секреты (создаются отдельно в namespace woodpecker в secret woodpecker-secret):
 #
+# Для GitHub:
 # WOODPECKER_GITHUB: "true"
 # WOODPECKER_GITHUB_CLIENT: "YOUR_GITHUB_OAUTH_CLIENT_ID"
 # WOODPECKER_GITHUB_SECRET: "YOUR_GITHUB_OAUTH_CLIENT_SECRET"
-# WOODPECKER_HOST: "https://example.com"
+# WOODPECKER_HOST: "https://woodpecker.example.com"
 # WOODPECKER_ADMIN: "YOUR_GITHUB_USERNAME"
+#
+# Для Forgejo (альтернатива GitHub):
+# WOODPECKER_FORGEJO: "true"
+# WOODPECKER_FORGEJO_URL: "https://forgejo.example.com"
+# WOODPECKER_FORGEJO_CLIENT: "YOUR_FORGEJO_OAUTH_CLIENT_ID"
+# WOODPECKER_FORGEJO_SECRET: "YOUR_FORGEJO_OAUTH_CLIENT_SECRET"
+# WOODPECKER_HOST: "https://woodpecker.example.com"
+# WOODPECKER_ADMIN: "YOUR_FORGEJO_USERNAME"
+# WOODPECKER_FORGEJO_SKIP_VERIFY: "false"  # Опционально: пропустить проверку SSL
 
 # Ingress (настраивается отдельно):
 # - См. файл woodpecker-ingress.yaml

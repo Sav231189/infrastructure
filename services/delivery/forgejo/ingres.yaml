@@ -1,0 +1,51 @@
+# ==============================================================================
+# Forgejo - Ingress Configuration
+# ==============================================================================
+# Документация: https://kubernetes.io/docs/concepts/services-networking/ingress/
+#
+# Назначение:
+# - HTTP/HTTPS Ingress для веб-интерфейса Forgejo
+# - TCP ConfigMap для SSH доступа (проксирование через nginx-ingress)
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: forgejo-ingress
+  namespace: git
+  annotations:
+    # Отключаем SSL редирект, т.к. SSL настроен в Nginx Proxy Manager
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+
+    # Увеличенные таймауты для длительных операций (загрузка больших репозиториев)
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+    # Максимальный размер тела запроса (для больших файлов, push больших коммитов)
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+
+spec:
+  # Класс Ingress Controller (NGINX)
+  ingressClassName: nginx
+
+  # Правила маррутизации
+  rules:
+    # ⚠️ ВАЖНО: Замените на ваш домен!
+    - host: git.stroy-track.ru
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Имя сервиса Forgejo (создается Helm chart'ом)
+                name: forgejo-http
+                port:
+                  number: 3000
+
+  # TLS/SSL сертификаты
+  # В нашем случае SSL настроен в Nginx Proxy Manager, поэтому tls пустой
+  # Если используете cert-manager, раскомментируйте:
+  # tls:
+  #   - hosts:
+  #       - git.stroy-track.ru
+  #     secretName: forgejo-tls-secret
